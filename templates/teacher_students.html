@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student management</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="app-shell teacher-workspace-shell">
+        <aside class="sidebar">
+            <button class="sidebar-toggle" type="button" aria-label="Toggle sidebar">☰</button>
+            <div class="logo-wrap">
+                <span class="logo-mark"><img src="{{ url_for('static', filename='images/cva-logo.png') }}" alt="CVA logo"></span>
+                <span class="logo-text">CVA Let's speak!</span>
+            </div>
+            <nav>
+                <a href="{{ url_for('dashboard') }}"><span class="nav-icon">🏠</span><span class="nav-label">{{ t('dashboard') }}</span></a>
+                <a class="active" href="{{ url_for('teacher_students') }}"><span class="nav-icon">👥</span><span class="nav-label">{{ t('student') }}</span></a>
+                <a href="{{ url_for('teacher_lessons') }}"><span class="nav-icon">📘</span><span class="nav-label">{{ t('lessons') }}</span></a>
+                <a href="{{ url_for('practice_page') }}"><span class="nav-icon">🎤</span><span class="nav-label">Practice</span></a>
+                <a href="{{ url_for('teacher_profile') }}"><span class="nav-icon">👤</span><span class="nav-label">My account</span></a>
+                <a href="{{ url_for('logout') }}"><span class="nav-icon">⎋</span><span class="nav-label">{{ t('logout') }}</span></a>
+            </nav>
+            <div class="language-switcher sidebar-lang">
+                <button type="button" data-lang="vi" class="lang-btn {% if lang == 'vi' %}active{% endif %}">VI</button>
+                <button type="button" data-lang="en" class="lang-btn {% if lang == 'en' %}active{% endif %}">EN</button>
+            </div>
+        </aside>
+
+        <main class="main-panel">
+            <header class="topbar">
+                <div>
+                    <h2>Student management</h2>
+                    <p>Review exercises and speaking submissions.</p>
+                </div>
+                <div class="user-box">{{ user.full_name }}</div>
+            </header>
+
+            {% if student_created_success %}
+            <section class="card wide-card">
+                <div class="alert-box success-box" role="status">{{ student_created_success }}</div>
+            </section>
+            {% endif %}
+
+            {% if warning %}
+            <section class="card wide-card">
+                <div class="alert-box {{ 'success-box' if sync_success else 'warning-box' }}" role="status">{{ warning }}</div>
+            </section>
+            {% endif %}
+
+            <section class="card wide-card">
+                <div class="card-header list-card-toolbar">
+                    <h3>{{ t('student') }}</h3>
+                    <div class="table-actions">
+                        <a class="primary-btn student-add-btn" href="{{ url_for('teacher_new_student') }}">+ Add student</a>
+                        <form method="POST" action="{{ url_for('teacher_sync_google') }}" class="inline-form" onsubmit="return confirm('Sync the Student list with Google Sheets now?');">
+                            <input type="hidden" name="sheet" value="student">
+                            <button class="sync-icon-btn" type="submit" title="Sync Student list with Google Sheets" aria-label="Sync Student list with Google Sheets"><span aria-hidden="true">↻</span></button>
+                        </form>
+                        <form method="GET" action="{{ url_for('teacher_students') }}" class="list-search-form">
+                            <label class="mini-label" for="student-search-field">Search</label>
+                            <select id="student-search-field" name="search_field" class="form-control mini-select">
+                                <option value="name" {% if search_field == 'name' %}selected{% endif %}>Name</option>
+                                <option value="username" {% if search_field == 'username' %}selected{% endif %}>Username</option>
+                                <option value="class" {% if search_field == 'class' %}selected{% endif %}>Class</option>
+                            </select>
+                            <input type="search" name="q" class="form-control search-query-input" value="{{ search_query }}" placeholder="Enter search text">
+                            <input type="hidden" name="per_page" value="{{ per_page }}">
+                            <button class="primary-btn" type="submit">Search</button>
+                            {% if search_query %}
+                            <a class="mini-btn" href="{{ url_for('teacher_students', per_page=per_page) }}">Clear</a>
+                            {% endif %}
+                        </form>
+                    </div>
+                </div>
+
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Username</th>
+                                <th>Class</th>
+                                <th>Tasks</th>
+                                <th>Average</th>
+                                <th>Status</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for student in students %}
+                            <tr>
+                                <td><a href="{{ url_for('teacher_student_detail', user_id=student.id) }}">{{ student.full_name }}</a></td>
+                                <td>{{ student.username or '—' }}</td>
+                                <td>{{ student.class_name or 'N/A' }}</td>
+                                <td>{{ student.tasks }}</td>
+                                <td>{{ '%.0f' % student.avg_score }}%</td>
+                                <td>{{ 'Active' if student.is_active else 'Locked' }}</td>
+                                <td>
+                                    <div class="row-actions compact-icon-actions">
+                                        <a class="icon-action-btn edit-icon-btn" href="{{ url_for('teacher_student_detail', user_id=student.id) }}" title="View student" aria-label="View student">👁</a>
+                                        <a class="icon-action-btn edit-icon-btn" href="{{ url_for('teacher_edit_student', user_id=student.id) }}" title="Edit student" aria-label="Edit student">✎</a>
+                                        <form method="POST" action="{{ url_for('toggle_student_status', user_id=student.id) }}" style="display:inline;">
+                                            <button class="icon-action-btn edit-icon-btn" type="submit" title="{{ 'Lock student' if student.is_active else 'Unlock student' }}" aria-label="{{ 'Lock student' if student.is_active else 'Unlock student' }}">{{ '🔒' if student.is_active else '🔓' }}</button>
+                                        </form>
+                                        <form method="POST" action="{{ url_for('delete_student', user_id=student.id) }}" style="display:inline;" onsubmit="return confirm('Delete this student?');">
+                                            <button class="icon-action-btn delete-icon-btn" type="submit" title="Delete student" aria-label="Delete student">🗑</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="pagination">
+                    <form method="GET" action="{{ url_for('teacher_students') }}" class="page-size-form">
+                        <label for="student-page-size">Rows per page</label>
+                        <input type="hidden" name="search_field" value="{{ search_field }}">
+                        <input type="hidden" name="q" value="{{ search_query }}">
+                        <select id="student-page-size" name="per_page" class="mini-select" onchange="this.form.submit()">
+                            {% for size in page_size_options %}
+                            <option value="{{ size }}" {% if size == per_page %}selected{% endif %}>{{ size }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                    <span>Showing {{ (page - 1) * per_page + 1 if total_items else 0 }}–{{ [page * per_page, total_items]|min }} of {{ total_items }}</span>
+                    {% if page > 1 %}
+                    <a href="{{ url_for('teacher_students', page=page-1, per_page=per_page, search_field=search_field, q=search_query) }}" class="page-btn page-nav-btn" aria-label="Previous page">← Previous</a>
+                    {% else %}
+                    <span class="page-btn page-nav-btn is-disabled" aria-disabled="true">← Previous</span>
+                    {% endif %}
+                    <span class="page-current">Page <strong>{{ page }}</strong> of {{ total_pages }}</span>
+                    {% if page < total_pages %}
+                    <a href="{{ url_for('teacher_students', page=page+1, per_page=per_page, search_field=search_field, q=search_query) }}" class="page-btn page-nav-btn" aria-label="Next page">Next →</a>
+                    {% else %}
+                    <span class="page-btn page-nav-btn is-disabled" aria-disabled="true">Next →</span>
+                    {% endif %}
+                </div>
+            </section>
+
+        </main>
+    </div>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

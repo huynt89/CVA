@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Account | CVA Let's speak!</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="account-page unified-page premium-page">
+    <main class="account-shell student-account-shell">
+        <header class="account-page-header">
+            <a href="{{ url_for('dashboard') }}" class="account-back-link"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg><span>Back to dashboard</span></a>
+            <span class="account-header-label">ACCOUNT SETTINGS</span>
+        </header>
+
+        <section class="account-hero">
+            <div class="account-avatar">{{ (user.full_name or 'S')[:1]|upper }}</div>
+            <div>
+                <p class="account-eyebrow">STUDENT ACCOUNT</p>
+                <h1>Change password</h1>
+                <p>Update your password to keep your account secure.</p>
+            </div>
+        </section>
+
+        {% if saved %}
+        <div class="account-alert account-alert-success" role="status">Your password has been updated successfully.</div>
+        {% endif %}
+        {% if error %}
+        <div class="account-alert account-alert-error" role="alert">{{ error }}</div>
+        {% endif %}
+
+        <form method="POST" class="account-card">
+            <div class="account-card-heading">
+                <div>
+                    <h2>Security</h2>
+                    <p>Enter your current password, then choose a new password.</p>
+                </div>
+                <span class="account-role-badge">Student</span>
+            </div>
+
+            <div class="account-form-grid student-password-grid">
+                <div class="account-field account-field-full">
+                    <label for="current_password">Current password</label>
+                    <input id="current_password" class="form-control" name="current_password" type="password" autocomplete="current-password" required>
+                </div>
+                <div class="account-field">
+                    <label for="new_password">New password</label>
+                    <input id="new_password" class="form-control" name="new_password" type="password" autocomplete="new-password" minlength="6" required>
+                </div>
+                <div class="account-field">
+                    <label for="confirm_password">Confirm new password</label>
+                    <input id="confirm_password" class="form-control" name="confirm_password" type="password" autocomplete="new-password" minlength="6" required>
+                </div>
+            </div>
+
+            <footer class="account-form-actions">
+                <a href="{{ url_for('dashboard') }}" class="secondary-btn">Cancel</a>
+                <button type="submit" class="primary-btn">Update password</button>
+            </footer>
+        </form>
+    </main>
+</body>
+</html>

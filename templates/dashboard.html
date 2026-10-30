@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CVA Let's speak!</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="app-shell">
+        <aside class="sidebar">
+            <div class="logo-wrap">
+                <span class="logo-mark"><img src="{{ url_for('static', filename='images/cva-logo.png') }}" alt="CVA logo"></span>
+                <span class="logo-text">CVA Let's speak!</span>
+            </div>
+            <nav>
+                <a class="active" href="{{ url_for('dashboard') }}">Dashboard</a>
+                <a href="#">Lessons</a>
+                <a href="#">Vocabulary</a>
+                <a href="#">Practice</a>
+                <a href="#">Progress</a>
+            </nav>
+            <div class="sidebar-card">
+                <p>Today's goal</p>
+                <strong>2 lessons</strong>
+                <span>1 speaking task</span>
+            </div>
+        </aside>
+
+        <main class="main-panel">
+            <header class="topbar">
+                <div>
+                    <h2>Hello, Lan!</h2>
+                    <p>Continue your English journey</p>
+                </div>
+                <div class="user-box">Student</div>
+            </header>
+
+            <section class="stats-grid">
+                <div class="stat-card accent-blue">
+                    <span>Lessons done</span>
+                    <strong>12</strong>
+                </div>
+                <div class="stat-card accent-green">
+                    <span>Speaking score</span>
+                    <strong>84%</strong>
+                </div>
+                <div class="stat-card accent-orange">
+                    <span>Streak</span>
+                    <strong>7 days</strong>
+                </div>
+            </section>
+
+            <section class="content-grid">
+                <div class="card wide-card">
+                    <div class="card-header">
+                        <h3>Continue learning</h3>
+                        <a href="#">View all</a>
+                    </div>
+                    <div class="lesson-list">
+                        {% for lesson in lessons %}
+                        <div class="lesson-item">
+                            <div>
+                                <span class="pill">Grade {{ lesson.class_level or 6 }}</span>
+                                <h4>{{ lesson.title }}</h4>
+                                <p>{{ lesson.topic }}</p>
+                            </div>
+                            <a class="mini-btn" href="{{ url_for('lesson', lesson_id=lesson.id) }}">Open</a>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Daily task</h3>
+                    </div>
+                    <ul class="task-list">
+                        <li>Watch 1 dialogue video</li>
+                        <li>Complete sentence builder</li>
+                        <li>Record 1 speaking answer</li>
+                    </ul>
+                </div>
+            </section>
+        </main>
+    </div>
+</body>
+</html>

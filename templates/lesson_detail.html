@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ lesson.title_en }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="premium-page lesson-page">
+    <div class="page-shell">
+        <header class="page-topbar">
+            <div>
+                <a href="{{ url_for('dashboard') }}" class="back-link icon-only" aria-label="Back" title="Back"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg></a>
+            </div>
+            <div class="page-title">
+                <span class="pill">Grade {{ lesson.class_level or 6 }}</span>
+                <h2>{{ lesson.title_en }}</h2>
+            </div>
+        </header>
+
+        <div class="lesson-layout">
+            <div class="video-panel card">
+                {% if lesson.video_url %}
+                    {% if 'youtube.com' in lesson.video_url or 'youtu.be' in lesson.video_url %}
+                        <iframe width="100%" height="420" src="{{ normalize_youtube_embed_url(lesson.video_url) }}" title="Video lesson" frameborder="0" allowfullscreen></iframe>
+                    {% else %}
+                        <video controls width="100%">
+                            <source src="{{ lesson.video_url }}" type="video/mp4">
+                        </video>
+                    {% endif %}
+                {% endif %}
+                <div class="video-caption">
+                    <h3>{{ lesson.topic_en or lesson.title_en }}</h3>
+                    <p>{{ lesson.goal_en or lesson.goal_vi or lesson.title_en }}</p>
+                </div>
+            </div>
+
+            <aside class="lesson-sidebar card">
+                <h3>{{ t('vocabulary') }}</h3>
+                <ul class="vocab-list">
+                    {% for vocab in (lesson.vocabulary or '').split(',') if vocab.strip() %}
+                    <li>{{ vocab.strip() }}</li>
+                    {% endfor %}
+                </ul>
+                <h3>Dialogue content</h3>
+                <p class="highlight-text">{{ lesson.dialogue or 'No dialogue content yet.' }}</p>
+                <a class="primary-btn full-width" href="{{ url_for('exercise', lesson_id=lesson.id) }}">{{ t('practice_now') }}</a>
+            </aside>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ t('lessons') }} manager</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="app-shell teacher-workspace-shell">
+        <aside class="sidebar">
+            <button class="sidebar-toggle" type="button" aria-label="Toggle sidebar">☰</button>
+            <div class="logo-wrap">
+                <span class="logo-mark"><img src="{{ url_for('static', filename='images/cva-logo.png') }}" alt="CVA logo"></span>
+                <span class="logo-text">CVA Let's speak!</span>
+            </div>
+            <nav>
+                <a href="{{ url_for('dashboard') }}"><span class="nav-icon">🏠</span><span class="nav-label">{{ t('dashboard') }}</span></a>
+                <a href="{{ url_for('teacher_students') }}"><span class="nav-icon">👥</span><span class="nav-label">{{ t('student') }}</span></a>
+                <a class="active" href="{{ url_for('teacher_lessons') }}"><span class="nav-icon">📘</span><span class="nav-label">{{ t('lessons') }}</span></a>
+                <a href="{{ url_for('practice_page') }}"><span class="nav-icon">🎤</span><span class="nav-label">Practice</span></a>
+                <a href="{{ url_for('teacher_profile') }}"><span class="nav-icon">👤</span><span class="nav-label">My account</span></a>
+                <a href="{{ url_for('logout') }}"><span class="nav-icon">⎋</span><span class="nav-label">{{ t('logout') }}</span></a>
+            </nav>
+            <div class="language-switcher sidebar-lang">
+                <button type="button" data-lang="vi" class="lang-btn {% if lang == 'vi' %}active{% endif %}">VI</button>
+                <button type="button" data-lang="en" class="lang-btn {% if lang == 'en' %}active{% endif %}">EN</button>
+            </div>
+        </aside>
+
+        <main class="main-panel">
+            <header class="topbar">
+                <div>
+                    <h2>{{ t('lessons') }}</h2>
+                    <p>Update video links, questions, and exercise text.</p>
+                </div>
+                <div class="user-box">{{ user.full_name }}</div>
+            </header>
+
+            {% if warning %}
+            <section class="card wide-card">
+                <div class="alert-box {{ 'success-box' if sync_success else 'warning-box' }}" role="status">{{ warning }}</div>
+            </section>
+            {% endif %}
+
+            <section class="card wide-card">
+                <div class="card-header lesson-toolbar">
+                    <h3>{{ t('lessons') }}</h3>
+                    <div class="table-actions lesson-toolbar-actions">
+                        <form method="GET" action="{{ url_for('teacher_lessons') }}" class="inline-form lesson-filter-form">
+                            <input type="hidden" name="search_field" value="{{ search_field }}">
+                            <input type="hidden" name="q" value="{{ search_query }}">
+                            <input type="hidden" name="per_page" value="{{ per_page }}">
+                            <label class="mini-label" for="class_level_filter">Class</label>
+                            <select id="class_level_filter" name="class_level" class="form-control mini-select" onchange="this.form.submit()">
+                                <option value="">All grades</option>
+                                <option value="6" {% if request.args.get('class_level') == '6' %}selected{% endif %}>Grade 6</option>
+                                <option value="7" {% if request.args.get('class_level') == '7' %}selected{% endif %}>Grade 7</option>
+                                <option value="8" {% if request.args.get('class_level') == '8' %}selected{% endif %}>Grade 8</option>
+                                <option value="9" {% if request.args.get('class_level') == '9' %}selected{% endif %}>Grade 9</option>
+                            </select>
+                        </form>
+                        <form method="POST" action="{{ url_for('teacher_sync_google') }}" class="inline-form" onsubmit="return confirm('Sync the Lesson list with Google Sheets now?');">
+                            <input type="hidden" name="sheet" value="lesson">
+                            <button class="sync-icon-btn" type="submit" title="Sync Lesson list with Google Sheets" aria-label="Sync Lesson list with Google Sheets"><span aria-hidden="true">↻</span></button>
+                        </form>
+                        <form method="GET" action="{{ url_for('teacher_lessons') }}" class="list-search-form">
+                            <label class="mini-label" for="lesson-search-field">Search</label>
+                            <select id="lesson-search-field" name="search_field" class="form-control mini-select">
+                                <option value="title" {% if search_field == 'title' %}selected{% endif %}>Title</option>
+                                <option value="class" {% if search_field == 'class' %}selected{% endif %}>Class</option>
+                                <option value="week" {% if search_field == 'week' %}selected{% endif %}>Week</option>
+                            </select>
+                            <input type="search" name="q" class="form-control search-query-input" value="{{ search_query }}" placeholder="Enter search text">
+                            <input type="hidden" name="per_page" value="{{ per_page }}">
+                            <input type="hidden" name="class_level" value="{{ request.args.get('class_level', '') }}">
+                            <button class="primary-btn" type="submit">Search</button>
+                            {% if search_query %}
+                            <a class="mini-btn" href="{{ url_for('teacher_lessons', per_page=per_page, class_level=request.args.get('class_level', '')) }}">Clear</a>
+                            {% endif %}
+                        </form>
+                        <form method="POST" action="{{ url_for('teacher_new_lesson') }}" class="inline-form lesson-create-form">
+                            <select name="class_level" class="mini-select">
+                                <option value="6">Grade 6</option>
+                                <option value="7">Grade 7</option>
+                                <option value="8">Grade 8</option>
+                                <option value="9">Grade 9</option>
+                            </select>
+                            <button class="primary-btn" type="submit">+ Add new</button>
+                        </form>
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th class="table-head-compact">ID</th>
+                                <th class="table-head-compact table-head-nowrap">Class</th>
+                                <th class="table-head-compact table-head-nowrap">Title</th>
+                                <th class="table-head-compact table-head-nowrap">Week</th>
+                                <th class="table-head-compact table-head-nowrap">Open/Close</th>
+                                <th class="table-head-compact table-head-nowrap">Practice now</th>
+                                <th class="table-head-compact table-head-nowrap">Dialogue</th>
+                                <th class="table-head-compact">Video</th>
+                                <th class="table-head-compact">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for lesson in lessons %}
+                            <tr>
+                                <td class="table-id-cell">{{ lesson.id }}</td>
+                                <td class="table-single-line">{{ lesson.class_level or '6' }}</td>
+                                <td class="table-long-text table-two-line" title="{{ lesson.title_en or lesson.title_vi }}{% if lesson.title_vi and lesson.title_en %} / {{ lesson.title_vi }}{% endif %}">
+                                    {{ lesson.title_en or lesson.title_vi }}{% if lesson.title_vi and lesson.title_en %} / {{ lesson.title_vi }}{% endif %}
+                                </td>
+                                <td class="table-single-line">{{ lesson.week_number or 1 }}</td>
+                                <td class="table-date-stack">
+                                    <span>{{ lesson.open_date or '—' }}</span>
+                                    <span>{{ lesson.close_date or '—' }}</span>
+                                </td>
+                                <td class="table-long-text table-two-line" title="{{ lesson.speaking_question or lesson.sample_question or '—' }}">
+                                    {{ lesson.speaking_question or lesson.sample_question or '—' }}
+                                </td>
+                                <td class="table-long-text table-two-line" title="{{ lesson.dialogue or '—' }}">
+                                    {{ lesson.dialogue or '—' }}
+                                </td>
+                                <td class="table-url-cell">
+                                    {% if lesson.video_url %}
+                                        <a href="{{ lesson.video_url }}" target="_blank" rel="noopener noreferrer" title="{{ lesson.video_url }}">Open video</a>
+                                    {% else %}
+                                        —
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="row-actions compact-icon-actions">
+                                        <a class="icon-action-btn edit-icon-btn" href="{{ url_for('teacher_edit_lesson', lesson_id=lesson.id) }}" title="Edit lesson" aria-label="Edit lesson">✎</a>
+                                        <form method="POST" action="{{ url_for('delete_lesson', lesson_id=lesson.id) }}" style="display:inline;" onsubmit="return confirm('Delete this lesson?');">
+                                            <button class="icon-action-btn delete-icon-btn" type="submit" title="Delete lesson" aria-label="Delete lesson">🗑</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="pagination">
+                    <form method="GET" action="{{ url_for('teacher_lessons') }}" class="page-size-form">
+                        <label for="lesson-page-size">Rows per page</label>
+                        <input type="hidden" name="search_field" value="{{ search_field }}">
+                        <input type="hidden" name="q" value="{{ search_query }}">
+                        <input type="hidden" name="class_level" value="{{ request.args.get('class_level', '') }}">
+                        <select id="lesson-page-size" name="per_page" class="mini-select" onchange="this.form.submit()">
+                            {% for size in page_size_options %}
+                            <option value="{{ size }}" {% if size == per_page %}selected{% endif %}>{{ size }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                    <span>Showing {{ (page - 1) * per_page + 1 if total_items else 0 }}–{{ [page * per_page, total_items]|min }} of {{ total_items }}</span>
+                    {% if page > 1 %}
+                    <a href="{{ url_for('teacher_lessons', page=page-1, per_page=per_page, class_level=request.args.get('class_level', ''), search_field=search_field, q=search_query) }}" class="page-btn page-nav-btn" aria-label="Previous page">← Previous</a>
+                    {% else %}
+                    <span class="page-btn page-nav-btn is-disabled" aria-disabled="true">← Previous</span>
+                    {% endif %}
+                    <span class="page-current">Page <strong>{{ page }}</strong> of {{ total_pages }}</span>
+                    {% if page < total_pages %}
+                    <a href="{{ url_for('teacher_lessons', page=page+1, per_page=per_page, class_level=request.args.get('class_level', ''), search_field=search_field, q=search_query) }}" class="page-btn page-nav-btn" aria-label="Next page">Next →</a>
+                    {% else %}
+                    <span class="page-btn page-nav-btn is-disabled" aria-disabled="true">Next →</span>
+                    {% endif %}
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

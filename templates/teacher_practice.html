@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Practice submissions</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="app-shell teacher-workspace-shell">
+        <aside class="sidebar">
+            <button class="sidebar-toggle" type="button" aria-label="Toggle sidebar">☰</button>
+            <div class="logo-wrap">
+                <span class="logo-mark"><img src="{{ url_for('static', filename='images/cva-logo.png') }}" alt="CVA logo"></span>
+                <span class="logo-text">CVA Let's speak!</span>
+            </div>
+            <nav>
+                <a href="{{ url_for('dashboard') }}"><span class="nav-icon">🏠</span><span class="nav-label">{{ t('dashboard') }}</span></a>
+                <a href="{{ url_for('teacher_students') }}"><span class="nav-icon">👥</span><span class="nav-label">{{ t('student') }}</span></a>
+                <a href="{{ url_for('teacher_lessons') }}"><span class="nav-icon">📘</span><span class="nav-label">{{ t('lessons') }}</span></a>
+                <a class="active" href="{{ url_for('teacher_practice') }}"><span class="nav-icon">🎤</span><span class="nav-label">Practice</span></a>
+                <a href="{{ url_for('teacher_profile') }}"><span class="nav-icon">👤</span><span class="nav-label">My account</span></a>
+                <a href="{{ url_for('logout') }}"><span class="nav-icon">⎋</span><span class="nav-label">{{ t('logout') }}</span></a>
+            </nav>
+            <div class="language-switcher sidebar-lang">
+                <button type="button" data-lang="vi" class="lang-btn {% if lang == 'vi' %}active{% endif %}">VI</button>
+                <button type="button" data-lang="en" class="lang-btn {% if lang == 'en' %}active{% endif %}">EN</button>
+            </div>
+        </aside>
+
+        <main class="main-panel">
+            <header class="topbar">
+                <div>
+                    <h2>Practice</h2>
+                    <p>Submitted student work sorted by submission time.</p>
+                </div>
+                <div class="user-box">{{ user.full_name }}</div>
+            </header>
+
+            {% if warning %}
+            <section class="card wide-card">
+                <div class="alert-box {{ 'success-box' if sync_success else 'warning-box' }}" role="status">{{ warning }}</div>
+            </section>
+            {% endif %}
+
+            <section class="review-summary-strip">
+                <div class="practice-stat-card accent-blue">
+                    <span>Total submissions</span>
+                    <strong>{{ review_summary.total }}</strong>
+                    <small>All records</small>
+                </div>
+                <div class="practice-stat-card accent-green">
+                    <span>Reviewed</span>
+                    <strong>{{ review_summary.reviewed }}</strong>
+                    <small>Teacher scored</small>
+                </div>
+                <div class="practice-stat-card accent-orange">
+                    <span>Pending</span>
+                    <strong>{{ review_summary.pending }}</strong>
+                    <small>Need review</small>
+                </div>
+                <div class="practice-stat-card accent-violet">
+                    <span>Avg score</span>
+                    <strong>{{ review_summary.average_score }}</strong>
+                    <small>Teacher score</small>
+                </div>
+            </section>
+
+            <section class="card wide-card">
+                <div class="card-header list-card-toolbar">
+                    <h3>Submitted exercises</h3>
+                    <div class="table-actions">
+                        <form method="POST" action="{{ url_for('teacher_sync_google') }}" class="inline-form" onsubmit="return confirm('Sync all Practice records to Google Sheets now?');">
+                            <input type="hidden" name="sheet" value="practice">
+                            <button type="submit" class="sync-icon-btn" title="Sync Practice records with Google Sheets" aria-label="Sync Practice records with Google Sheets"><span aria-hidden="true">↻</span></button>
+                        </form>
+                        <form method="POST" action="{{ url_for('ai_grade_all_submissions') }}" class="inline-form">
+                            <button type="submit" class="mini-btn ai-grade-all-btn">⚡ Grade all with AI</button>
+                        </form>
+                        <form method="GET" action="{{ url_for('teacher_practice') }}" class="list-search-form">
+                            <label class="mini-label" for="practice-search-field">Search</label>
+                            <select id="practice-search-field" name="search_field" class="form-control mini-select">
+                                <option value="student" {% if search_field == 'student' %}selected{% endif %}>Student</option>
+                                <option value="class" {% if search_field == 'class' %}selected{% endif %}>Class</option>
+                                <option value="lesson" {% if search_field == 'lesson' %}selected{% endif %}>Lesson</option>
+                            </select>
+                            <input type="search" name="q" class="form-control search-query-input" value="{{ search_query }}" placeholder="Enter search text">
+                            <input type="hidden" name="per_page" value="{{ per_page }}">
+                            <button class="primary-btn" type="submit">Search</button>
+                            {% if search_query %}
+                            <a class="mini-btn" href="{{ url_for('teacher_practice', per_page=per_page) }}">Clear</a>
+                            {% endif %}
+                        </form>
+                    </div>
+                </div>
+                <div class="table-wrap practice-table-wrap">
+                    <table class="data-table practice-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Student</th>
+                                <th scope="col">Class</th>
+                                <th scope="col">Lesson</th>
+                                <th scope="col">Submitted</th>
+                                <th scope="col">Gemini</th>
+                                <th scope="col">Groq</th>
+                                <th scope="col">Teacher</th>
+                                <th scope="col">Status</th>
+                                <th scope="col">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in submissions %}
+                            <tr>
+                                <td data-label="Student"><a class="practice-student-link" href="{{ url_for('review_submission', submission_id=item.id) }}" title="{{ item.student_name }}">{{ item.student_name }}</a></td>
+                                <td data-label="Class">{{ item.class_name or '—' }}</td>
+                                <td data-label="Lesson"><span class="practice-lesson-title" title="{{ item.title_vi or item.title_en or 'Lesson' }}">{{ item.title_vi or item.title_en or 'Lesson' }}</span></td>
+                                <td data-label="Submitted"><time class="practice-submitted-time" datetime="{{ item.created_at }}" title="{{ item.created_at }}">{{ item.created_at[:16] if item.created_at else '—' }}</time></td>
+                                <td data-label="Gemini">
+                                    {% if item.gemini_score is not none %}
+                                        <span class="score-pill practice-score gemini-score">{{ item.gemini_score }}</span>
+                                    {% else %}
+                                        <span class="score-pill practice-score score-empty">—</span>
+                                    {% endif %}
+                                </td>
+                                <td data-label="Groq">
+                                    {% if item.groq_score is not none %}
+                                        <span class="score-pill practice-score groq-score">{{ item.groq_score }}</span>
+                                    {% else %}
+                                        <span class="score-pill practice-score score-empty">—</span>
+                                    {% endif %}
+                                </td>
+                                <td data-label="Teacher"><span class="score-pill practice-score teacher-score">{{ item.teacher_score if item.teacher_score is not none else '—' }}</span></td>
+                                <td data-label="Status">
+                                    <div class="submission-cell-stack">
+                                        <span class="submission-status {% if item.submitted_media %}status-success{% else %}status-muted{% endif %}">{% if item.submitted_media %}Recorded{% else %}Not recorded{% endif %}</span>
+                                        <span class="small-muted-text">{{ 'Reviewed' if item.teacher_note else 'Pending review' }}</span>
+                                    </div>
+                                </td>
+                                <td data-label="Actions">
+                                    <div class="practice-row-actions">
+                                        <a class="practice-action-btn review-action" href="{{ url_for('review_submission', submission_id=item.id) }}" title="Review submission" aria-label="Review submission">Review</a>
+                                        <form method="POST" action="{{ url_for('ai_grade_submission', submission_id=item.id) }}">
+                                            <button type="submit" class="practice-action-btn grade-action" title="Grade with AI" aria-label="Grade with AI">⚡</button>
+                                        </form>
+                                        <form method="POST" action="{{ url_for('delete_practice_submission', submission_id=item.id) }}" onsubmit="return confirm('Delete this Practice submission? This will update the database and Google Sheets.');">
+                                            <button type="submit" class="practice-action-btn delete-action" title="Delete submission" aria-label="Delete submission">
+                                                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 10v6M14 10v6"></path></svg>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="9">No submitted work yet.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="pagination">
+                    <form method="GET" action="{{ url_for('teacher_practice') }}" class="page-size-form">
+                        <label for="practice-page-size">Rows per page</label>
+                        <input type="hidden" name="search_field" value="{{ search_field }}">
+                        <input type="hidden" name="q" value="{{ search_query }}">
+                        <select id="practice-page-size" name="per_page" class="mini-select" onchange="this.form.submit()">
+                            {% for size in page_size_options %}
+                            <option value="{{ size }}" {% if size == per_page %}selected{% endif %}>{{ size }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                    <span>Showing {{ (page - 1) * per_page + 1 if total_items else 0 }}–{{ [page * per_page, total_items]|min }} of {{ total_items }}</span>
+                    {% if page > 1 %}
+                    <a href="{{ url_for('teacher_practice', page=page-1, per_page=per_page, search_field=search_field, q=search_query) }}" class="page-btn page-nav-btn" aria-label="Previous page">← Previous</a>
+                    {% else %}
+                    <span class="page-btn page-nav-btn is-disabled" aria-disabled="true">← Previous</span>
+                    {% endif %}
+                    <span class="page-current">Page <strong>{{ page }}</strong> of {{ total_pages }}</span>
+                    {% if page < total_pages %}
+                    <a href="{{ url_for('teacher_practice', page=page+1, per_page=per_page, search_field=search_field, q=search_query) }}" class="page-btn page-nav-btn" aria-label="Next page">Next →</a>
+                    {% else %}
+                    <span class="page-btn page-nav-btn is-disabled" aria-disabled="true">Next →</span>
+                    {% endif %}
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

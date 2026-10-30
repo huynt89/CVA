@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CVA Let's speak!</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="app-shell teacher-workspace-shell">
+        <aside class="sidebar">
+            <div class="logo-wrap">
+                <span class="logo-mark"><img src="{{ url_for('static', filename='images/cva-logo.png') }}" alt="CVA logo"></span>
+                <span class="logo-text">CVA Let's speak!</span>
+            </div>
+            <nav>
+                <a class="active" href="#">Overview</a>
+                <a href="#">Classes</a>
+                <a href="#">Assignments</a>
+                <a href="#">Reports</a>
+            </nav>
+        </aside>
+
+        <main class="main-panel">
+            <header class="topbar">
+                <div>
+                    <h2>CVA Let's speak!</h2>
+                    <p>Track progress and assign tasks</p>
+                </div>
+                <div class="user-box">Mr. Huy</div>
+            </header>
+
+            <section class="stats-grid">
+                {% for class in summary.classes %}
+                <div class="stat-card accent-blue">
+                    <span>{{ class.name }}</span>
+                    <strong>{{ class.completed }}/{{ class.students }}</strong>
+                    <small>Avg score: {{ class.avg_score }}%</small>
+                </div>
+                {% endfor %}
+            </section>
+
+            <section class="content-grid">
+                <div class="card wide-card">
+                    <div class="card-header">
+                        <h3>Assignments</h3>
+                        <a href="#">Create new</a>
+                    </div>
+                    <ul class="assignment-list">
+                        {% for item in summary.assignments %}
+                        <li>
+                            <div>
+                                <strong>{{ item.title }}</strong>
+                                <small>Due: {{ item.due }}</small>
+                            </div>
+                            <span class="status-pill">{{ item.status }}</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Quick actions</h3>
+                    </div>
+                    <ul class="task-list">
+                        <li>New lesson unit</li>
+                        <li>Share speaking task</li>
+                        <li>Generate report</li>
+                    </ul>
+                </div>
+            </section>
+        </main>
+    </div>
+</body>
+</html>

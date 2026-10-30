@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student detail</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="app-shell teacher-workspace-shell">
+        <aside class="sidebar">
+            <button class="sidebar-toggle" type="button" aria-label="Toggle sidebar">☰</button>
+            <div class="logo-wrap">
+                <span class="logo-mark"><img src="{{ url_for('static', filename='images/cva-logo.png') }}" alt="CVA logo"></span>
+                <span class="logo-text">CVA Let's speak!</span>
+            </div>
+            <nav>
+                <a href="{{ url_for('dashboard') }}"><span class="nav-icon">🏠</span><span class="nav-label">{{ t('dashboard') }}</span></a>
+                <a class="active" href="{{ url_for('teacher_students') }}"><span class="nav-icon">👥</span><span class="nav-label">{{ t('student') }}</span></a>
+                <a href="{{ url_for('teacher_lessons') }}"><span class="nav-icon">📘</span><span class="nav-label">{{ t('lessons') }}</span></a>
+                <a href="{{ url_for('practice_page') }}"><span class="nav-icon">🎤</span><span class="nav-label">Practice</span></a>
+                <a href="{{ url_for('teacher_profile') }}"><span class="nav-icon">👤</span><span class="nav-label">My account</span></a>
+                <a href="{{ url_for('logout') }}"><span class="nav-icon">⎋</span><span class="nav-label">{{ t('logout') }}</span></a>
+            </nav>
+            <div class="language-switcher sidebar-lang">
+                <button type="button" data-lang="vi" class="lang-btn {% if lang == 'vi' %}active{% endif %}">VI</button>
+                <button type="button" data-lang="en" class="lang-btn {% if lang == 'en' %}active{% endif %}">EN</button>
+            </div>
+        </aside>
+
+        <main class="main-panel">
+            <header class="topbar">
+                <div>
+                    <a href="{{ url_for('teacher_students') }}" class="back-link">← Back to students</a>
+                    <h2>Student detail</h2>
+                </div>
+                <div class="user-box">{{ user.full_name }}</div>
+            </header>
+
+            <section class="student-profile-card">
+                <div class="student-profile-avatar" aria-hidden="true">{{ student.full_name[0]|upper }}</div>
+                <div class="student-profile-info">
+                    <span class="student-profile-status {{ 'active' if student.is_active else 'locked' }}">{{ 'Active' if student.is_active else 'Locked' }}</span>
+                    <h3>{{ student.full_name }}</h3>
+                    <p>{{ student.email or 'No email provided' }}</p>
+                </div>
+                <a class="primary-btn student-edit-btn" href="{{ url_for('teacher_edit_student', user_id=student.id) }}">Edit student</a>
+            </section>
+
+            <section class="student-detail-stats">
+                <div class="student-detail-stat"><span>Class</span><strong>{{ student.class_name or 'N/A' }}</strong></div>
+                <div class="student-detail-stat"><span>Username</span><strong>{{ student.username or '—' }}</strong></div>
+                <div class="student-detail-stat"><span>Average score</span><strong>{{ '%.0f' % (student.average_score or 0) }}%</strong></div>
+                <div class="student-detail-stat"><span>Total submissions</span><strong>{{ progress|length }}</strong></div>
+            </section>
+
+            <section class="student-detail-sections">
+                <div class="detail-panel vocabulary-panel">
+                    <div class="detail-panel-header">
+                        <div>
+                            <span class="panel-kicker">LEARNING WORDS</span>
+                            <h3>Vocabulary</h3>
+                        </div>
+                        {% if student_vocabulary %}<span class="panel-count">{{ student_vocabulary|length }} words</span>{% endif %}
+                    </div>
+                    {% if student_vocabulary %}
+                    <div class="vocabulary-grid">
+                        {% for word in student_vocabulary %}
+                        <span class="vocabulary-item"><span class="vocabulary-dot"></span>{{ word }}</span>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="detail-empty-state"><span>📚</span><strong>No vocabulary recorded</strong><p>Words from completed lessons will appear here.</p></div>
+                    {% endif %}
+                </div>
+
+                <div class="detail-panel lesson-progress-panel">
+                    <div class="detail-panel-header">
+                        <div>
+                            <span class="panel-kicker">SUBMISSION HISTORY</span>
+                            <h3>Lesson progress</h3>
+                        </div>
+                        {% if progress %}<span class="panel-count">{{ progress|length }} submissions</span>{% endif %}
+                    </div>
+                    {% if progress %}
+                    <div class="table-wrap student-progress-table-wrap">
+                        <table class="data-table student-progress-table">
+                            <thead>
+                                <tr>
+                                    <th>Lesson</th>
+                                    <th>Submitted</th>
+                                    <th>Answer</th>
+                                    <th>Score</th>
+                                    <th>Audio</th>
+                                    <th>Teacher note</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in progress %}
+                                <tr>
+                                    <td data-label="Lesson"><strong>{{ item.title_vi or item.title_en or 'Lesson' }}</strong></td>
+                                    <td data-label="Submitted"><span class="student-detail-date">{{ item.created_at[:16] if item.created_at else '—' }}</span></td>
+                                    <td data-label="Answer"><span class="student-answer-preview" title="{{ item.answer|format_answer }}">{{ item.answer|format_answer }}</span></td>
+                                    <td data-label="Score"><span class="student-score-pill">{{ item.score or 0 }}%</span></td>
+                                    <td data-label="Audio">
+                                        {% if item.drive_url %}
+                                            <a class="student-media-link" href="{{ item.drive_url }}" target="_blank">Open Drive</a>
+                                        {% elif item.audio_path %}
+                                            <a class="student-media-link" href="{{ url_for('serve_upload', media_type='audio', filename=item.audio_path) }}" target="_blank">Listen</a>
+                                        {% else %}
+                                            <span class="student-detail-muted">—</span>
+                                        {% endif %}
+                                    </td>
+                                    <td data-label="Teacher note"><span class="student-note-preview">{{ item.teacher_note or 'No note yet' }}</span></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="detail-empty-state"><span>📝</span><strong>No lesson submissions yet</strong><p>Practice activity will appear in this section.</p></div>
+                    {% endif %}
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ t('app_name') }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="login-body">
+    <div class="login-shell">
+        <div class="login-panel">
+            <div class="brand-block">
+                <div class="brand-mark">
+                    <img src="{{ url_for('static', filename='images/cva-logo.png') }}" alt="CVA logo">
+                </div>
+                <h1>{{ t('app_name') }}</h1>
+                <p>{{ t('welcome') }}</p>
+                <div class="language-switcher">
+                    <button data-lang="vi" class="lang-btn {% if lang == 'vi' %}active{% endif %}">VI</button>
+                    <button data-lang="en" class="lang-btn {% if lang == 'en' %}active{% endif %}">EN</button>
+                </div>
+            </div>
+
+            <div class="login-form">
+                <div class="login-form-heading">
+                    <span class="login-kicker">CVA LET'S SPEAK!</span>
+                    <h2>{{ t('register') if show_register else t('login_title') }}</h2>
+                </div>
+                {% if registration_success %}
+                    <div class="alert-box success-box" role="status">{{ registration_success }}</div>
+                {% endif %}
+                {% if warning %}
+                    <div class="alert-box warning-box" role="status">{{ warning }}</div>
+                {% endif %}
+                {% if error %}
+                    <div class="alert-box" role="alert">{{ error }}</div>
+                {% endif %}
+
+                {% if not show_register %}
+                    <form method="POST" action="{{ url_for('login') }}">
+                        <div class="role-tabs" role="group" aria-label="Select role">
+                            <button type="button" class="role-tab active" data-role="student" aria-pressed="true">{{ t('student') }}</button>
+                            <button type="button" class="role-tab" data-role="teacher" aria-pressed="false">{{ t('teacher') }}</button>
+                        </div>
+                        <input type="hidden" name="role" value="student" class="role-input">
+
+                        <label for="login-username">Username</label>
+                        <input id="login-username" type="text" name="username" autocomplete="username" placeholder="your username" required>
+
+                        <label for="login-password">{{ t('password') }}</label>
+                        <input id="login-password" type="password" name="password" autocomplete="current-password" placeholder="••••••" required>
+
+                        <div class="login-actions">
+                            <button class="primary-btn login-submit-btn" type="submit" data-student="{{ t('student_login') }}" data-teacher="{{ t('teacher_login') }}">{{ t('student_login') }}</button>
+                            <a class="secondary-btn" href="{{ url_for('register') }}">{{ t('register') }}</a>
+                        </div>
+                    </form>
+                {% else %}
+                    <form method="POST" action="{{ url_for('register') }}">
+                        <label for="register-full-name">{{ t('full_name') }}</label>
+                        <input id="register-full-name" type="text" name="full_name" autocomplete="name" placeholder="Lan Nguyen" required>
+
+                        <label for="register-username">Username</label>
+                        <input id="register-username" type="text" name="username" autocomplete="username" placeholder="lannguyen" required>
+
+                        <label for="register-email">{{ t('email') }}</label>
+                        <input id="register-email" type="email" name="email" autocomplete="email" placeholder="student@school.com" required>
+
+                        <label for="register-password">{{ t('password') }}</label>
+                        <input id="register-password" type="password" name="password" autocomplete="new-password" placeholder="••••••" required>
+
+                        <label for="register-class">{{ t('class_name') }}</label>
+                        <input id="register-class" type="text" name="class_name" autocomplete="off" placeholder="7A">
+
+                        <div class="login-actions">
+                            <button class="primary-btn" type="submit">{{ t('register') }}</button>
+                            <a class="secondary-btn" href="{{ url_for('login') }}">{{ t('login_title') }}</a>
+                        </div>
+                    </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

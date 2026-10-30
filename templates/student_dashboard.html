@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ t('dashboard') }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="app-shell student-dashboard-shell">
+        <aside class="sidebar">
+            <button class="sidebar-toggle" type="button" aria-label="Toggle sidebar">☰</button>
+            <div class="logo-wrap">
+                <span class="logo-mark"><img src="{{ url_for('static', filename='images/cva-logo.png') }}" alt="CVA logo"></span>
+                <span class="logo-text">CVA Let's speak!</span>
+            </div>
+            <nav>
+                <a class="{% if active_section == 'dashboard' or not active_section %}active{% endif %}" href="{{ url_for('dashboard') }}"><span class="nav-icon">🏠</span><span class="nav-label">{{ t('dashboard') }}</span></a>
+                <a class="{% if active_section == 'lessons' %}active{% endif %}" href="{{ url_for('lessons_page') }}"><span class="nav-icon">📘</span><span class="nav-label">{{ t('lessons') }}</span></a>
+                <a class="{% if active_section == 'vocabulary' %}active{% endif %}" href="{{ url_for('vocabulary_page') }}"><span class="nav-icon">🧠</span><span class="nav-label">{{ t('vocabulary') }}</span></a>
+                <a class="{% if active_section == 'practice' %}active{% endif %}" href="{{ url_for('practice_page') }}"><span class="nav-icon">🎤</span><span class="nav-label">Practice</span></a>
+                <a class="{% if active_section == 'progress' %}active{% endif %}" href="{{ url_for('progress_page') }}"><span class="nav-icon">📊</span><span class="nav-label">{{ t('progress') }}</span></a>
+                <a href="{{ url_for('student_account') }}"><span class="nav-icon">👤</span><span class="nav-label">My account</span></a>
+                <a href="{{ url_for('logout') }}"><span class="nav-icon">⎋</span><span class="nav-label">{{ t('logout') }}</span></a>
+            </nav>
+            <div class="sidebar-card">
+                <p>{{ t('today_goal') }}</p>
+                <strong>2 {{ t('lessons') }}</strong>
+                <span>1 speaking task</span>
+            </div>
+            <div class="language-switcher sidebar-lang">
+                <button type="button" data-lang="vi" class="lang-btn {% if lang == 'vi' %}active{% endif %}">VI</button>
+                <button type="button" data-lang="en" class="lang-btn {% if lang == 'en' %}active{% endif %}">EN</button>
+            </div>
+        </aside>
+
+        <main class="main-panel">
+            <header class="topbar">
+                <div>
+                    <h2>Hello, {{ user.full_name.split()[0] }}!</h2>
+                    <p>Continue your English journey</p>
+                </div>
+                <div class="user-box">{{ user.role.title() }}</div>
+            </header>
+
+                        {% if active_section == 'dashboard' or not active_section %}
+                <!-- Modern Student Welcome Card -->
+                {% set total_available = student_progress.available %}
+                {% set percent_complete = [(student_progress.completed / total_available * 100)|round|int, 100]|min if total_available > 0 else 0 %}
+                <div class="student-progress-card">
+                    <div class="progress-info">
+                        <span class="progress-eyebrow">YOUR LEARNING JOURNEY</span>
+                        <h2>Your course progress</h2>
+                        <p>You have completed <strong>{{ percent_complete }}%</strong> of your English course. Keep it up!</p>
+                    </div>
+                    <div class="progress-visual">
+                        <span class="progress-percentage">{{ percent_complete }}%</span>
+                        <div class="progress-bar-container" role="progressbar" aria-label="Course completion" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ percent_complete }}">
+                            <div class="progress-bar-fill" style="width: {{ percent_complete }}%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <section class="stats-grid">
+                    <div class="stat-card accent-blue">
+                        <span class="nav-icon">📘</span>
+                        <span>{{ t('available_lessons') or 'Available lessons' }}</span>
+                        <strong>{{ student_progress.available }}</strong>
+                    </div>
+                    <div class="stat-card accent-green">
+                        <span class="nav-icon">✅</span>
+                        <span>{{ t('completed_tasks') or 'Completed tasks' }}</span>
+                        <strong>{{ student_progress.completed }}</strong>
+                    </div>
+                    <div class="stat-card accent-orange">
+                        <span class="nav-icon">⏳</span>
+                        <span>{{ t('pending_tasks') or 'Pending tasks' }}</span>
+                        <strong>{{ student_progress.pending }}</strong>
+                    </div>
+                </section>
+
+                <section class="content-grid">
+                    <div class="card wide-card">
+                        <div class="card-header">
+                            <h3>{{ t('continue_learning') }}</h3>
+                            <a href="{{ url_for('lessons_page') }}" style="font-size: 0.9rem;">View all →</a>
+                        </div>
+                        <div class="modern-lesson-grid">
+                            {% for lesson in lessons[:3] %}
+                            <div class="modern-lesson-card">
+                                <span class="pill lesson-badge">Grade {{ lesson.class_level or 6 }}</span>
+                                <div class="lesson-icon">📖</div>
+                                <h4>{{ lesson.title_en or lesson.title_vi }}</h4>
+                                <p>{{ (lesson.topic_en or lesson.topic_vi)[:80] }}...</p>
+                                <a class="primary-btn" style="margin-top: auto; width: 100%;" href="{{ url_for('lesson', lesson_id=lesson.id) }}">
+                                    {{ t('open_lesson') }}
+                                </a>
+                            </div>
+                            {% else %}
+                            <div class="student-empty-state">
+                                <span aria-hidden="true">📘</span>
+                                <strong>No lessons available yet</strong>
+                                <p>Your teacher's lessons will appear here when they are ready.</p>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>{{ t('daily_task') }}</h3>
+                        </div>
+                        <ul class="task-list" style="list-style: none; padding-left: 0;">
+                            <li style="padding: 12px; background: #f8fafc; border-radius: 10px; margin-bottom: 10px; display: flex; align-items: center; gap: 10px;">
+                                <input type="checkbox" checked disabled> <span>Watch 1 dialogue video</span>
+                            </li>
+                            <li style="padding: 12px; background: #f8fafc; border-radius: 10px; margin-bottom: 10px; display: flex; align-items: center; gap: 10px;">
+                                <input type="checkbox" disabled> <span>Complete sentence builder</span>
+                            </li>
+                            <li style="padding: 12px; background: #f8fafc; border-radius: 10px; display: flex; align-items: center; gap: 10px;">
+                                <input type="checkbox" disabled> <span>Record 1 speaking answer</span>
+                            </li>
+                        </ul>
+                    </div>
+                </section>
+            {% elif active_section == 'lessons' %}
+                <section class="stats-grid">
+                    <div class="stat-card accent-blue">
+                        <span>Available lessons</span>
+                        <strong>{{ student_progress.available }}</strong>
+                    </div>
+                    <div class="stat-card accent-green">
+                        <span>Completed tasks</span>
+                        <strong>{{ student_progress.completed }}</strong>
+                    </div>
+                    <div class="stat-card accent-orange">
+                        <span>Pending tasks</span>
+                        <strong>{{ student_progress.pending }}</strong>
+                    </div>
+                </section>
+
+                <section class="content-grid" style="grid-template-columns: 1fr;">
+                    <div class="card wide-card">
+                        <div class="card-header">
+                            <h3>{{ t('all_lessons') or 'All Lessons' }}</h3>
+                        </div>
+                        <div class="modern-lesson-grid">
+                            {% for lesson in lessons %}
+                            <div class="modern-lesson-card">
+                                <span class="pill lesson-badge">Grade {{ lesson.class_level or 6 }}</span>
+                                <div class="lesson-icon">📘</div>
+                                <h4>{{ lesson.title_en or lesson.title_vi }}</h4>
+                                <p>{{ lesson.topic_en or lesson.topic_vi }}</p>
+                                <div style="margin-top: auto; display: flex; flex-direction: column; gap: 8px;">
+                                    <a class="secondary-btn" style="width: 100%;" href="{{ url_for('lesson', lesson_id=lesson.id) }}">
+                                        {{ t('view_details') or 'View Details' }}
+                                    </a>
+                                    <a class="primary-btn" style="width: 100%;" href="{{ url_for('exercise', lesson_id=lesson.id) }}">
+                                        {{ t('practice_now') }}
+                                    </a>
+                                </div>
+                            </div>
+                            {% else %}
+                            <div class="student-empty-state">
+                                <span aria-hidden="true">📘</span>
+                                <strong>No lessons available yet</strong>
+                                <p>Your teacher's lessons will appear here when they are ready.</p>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </section>
+
+            {% elif active_section == 'vocabulary' %}
+                <section class="stats-grid">
+                    <div class="stat-card accent-blue">
+                        <span>Available lessons</span>
+                        <strong>{{ student_progress.available }}</strong>
+                    </div>
+                    <div class="stat-card accent-green">
+                        <span>Completed tasks</span>
+                        <strong>{{ student_progress.completed }}</strong>
+                    </div>
+                    <div class="stat-card accent-orange">
+                        <span>Pending tasks</span>
+                        <strong>{{ student_progress.pending }}</strong>
+                    </div>
+                </section>
+
+                <section class="content-grid">
+                    <div class="card wide-card">
+                        <div class="card-header">
+                            <h3>{{ t('vocabulary') }}</h3>
+                        </div>
+                        <ul class="task-list">
+                            {% for lesson in lessons %}
+                                {% for word in lesson.vocabulary.split(',') %}
+                                <li><strong>{{ word.strip() }}</strong> — {{ lesson.title_en or lesson.title_vi }}</li>
+                                {% endfor %}
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </section>
+            {% elif active_section == 'progress' %}
+                <section class="stats-grid">
+                    <div class="stat-card accent-blue">
+                        <span>Available lessons</span>
+                        <strong>{{ student_progress.available }}</strong>
+                    </div>
+                    <div class="stat-card accent-green">
+                        <span>Completed tasks</span>
+                        <strong>{{ student_progress.completed }}</strong>
+                    </div>
+                    <div class="stat-card accent-orange">
+                        <span>Pending tasks</span>
+                        <strong>{{ student_progress.pending }}</strong>
+                    </div>
+                </section>
+
+                <section class="content-grid">
+                    <div class="card wide-card">
+                        <div class="card-header">
+                            <h3>Weekly study plan</h3>
+                        </div>
+                        <div class="schedule-grid">
+                            {% for week in weekly_schedule %}
+                            <div class="week-card">
+                                <div class="week-header">
+                                    <strong>{{ week.label }}</strong>
+                                    <span>{{ week.date_range }}</span>
+                                </div>
+                                <ul>
+                                    {% for lesson in week.lessons %}
+                                    <li>{{ lesson.title }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </section>
+            {% elif active_section == 'practice' %}
+                <!-- Practice Hub Banner -->
+                <div class="practice-hub-banner">
+                    <div>
+                        <h2>🎤 Speaking Practice & Exercises</h2>
+                        <p>Practice pronunciation, answer questions, and review feedback from Gemini AI, Groq AI, and your teacher.</p>
+                    </div>
+                    <div>
+                        <span class="review-status-badge status-success" style="font-size: 13px; padding: 8px 16px;">
+                            ✓ Automatic AI grading is ready
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Practice Stats Grid -->
+                {% set teacher_scores = [] %}
+                {% set gemini_scores = [] %}
+                {% set groq_scores = [] %}
+                {% for item in practice_history %}
+                    {% if item.teacher_score is not none and item.teacher_score > 0 %}
+                        {% set _ = teacher_scores.append(item.teacher_score) %}
+                    {% endif %}
+                    {% if item.gemini_score is not none and item.gemini_score > 0 %}
+                        {% set _ = gemini_scores.append(item.gemini_score) %}
+                    {% endif %}
+                    {% if item.groq_score is not none and item.groq_score > 0 %}
+                        {% set _ = groq_scores.append(item.groq_score) %}
+                    {% endif %}
+                {% endfor %}
+
+                <section class="stats-grid practice-stats-grid">
+                    <div class="stat-card accent-blue">
+                        <span>Submissions</span>
+                        <strong>{{ practice_history|length }}</strong>
+                        <small style="color: #64748b; font-size: 12px;">Total attempts</small>
+                    </div>
+                    <div class="stat-card accent-orange">
+                        <span>Average teacher score</span>
+                        <strong>{{ (teacher_scores|sum / teacher_scores|length)|round|int if teacher_scores else '—' }}</strong>
+                        <small style="color: #64748b; font-size: 12px;">Out of 100</small>
+                    </div>
+                    <div class="stat-card accent-green">
+                        <span>Average Gemini AI score</span>
+                        <strong>{{ (gemini_scores|sum / gemini_scores|length)|round|int if gemini_scores else '—' }}</strong>
+                        <small style="color: #64748b; font-size: 12px;">Google Multimodal</small>
+                    </div>
+                    <div class="stat-card accent-violet">
+                        <span>Average Groq AI score</span>
+                        <strong>{{ (groq_scores|sum / groq_scores|length)|round|int if groq_scores else '—' }}</strong>
+                        <small style="color: #64748b; font-size: 12px;">Fast LLaMA</small>
+                    </div>
+                </section>
+
+                <!-- Available Practice Lessons to Start -->
+                <section class="card wide-card student-section-card">
+                    <div class="card-header">
+                        <div>
+                            <h3 style="font-size: 1.25rem; color: #1e293b;">📘 Choose a lesson to practice</h3>
+                            <p style="margin: 4px 0 0; color: #64748b; font-size: 13px;">Select a lesson to answer questions, arrange sentences, and record your speaking.</p>
+                        </div>
+                    </div>
+                    <div class="practice-lesson-cards-grid">
+                        {% for lesson in lessons %}
+                        <div class="practice-lesson-tile">
+                            <div class="practice-lesson-tile-top">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <span class="pill">Grade {{ lesson.class_level or 6 }}</span>
+                                    <span style="font-size: 12px; color: #64748b;">3 Tasks</span>
+                                </div>
+                                <h4>{{ lesson.title_en or lesson.title_vi }}</h4>
+                                <p>{{ lesson.topic_en or lesson.topic_vi or 'Practice pronunciation and sentence structure' }}</p>
+                            </div>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <a class="primary-btn" style="width: 100%; text-align: center; text-decoration: none; padding: 10px;" href="{{ url_for('exercise', lesson_id=lesson.id) }}">
+                                    🎤 Practice now
+                                </a>
+                            </div>
+                        </div>
+                        {% else %}
+                        <div class="student-empty-state">
+                            <span aria-hidden="true">🎤</span>
+                            <strong>No practice lessons available</strong>
+                            <p>New lessons will appear here when your teacher adds them.</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </section>
+
+                <!-- Synchronized Evaluation Results -->
+                <section class="card wide-card student-section-card">
+                    <div class="card-header">
+                        <div>
+                            <h3 style="font-size: 1.25rem; color: #1e293b;">📊 Practice Results & Feedback</h3>
+                            <p style="margin: 4px 0 0; color: #64748b; font-size: 13px;">Review feedback from Gemini, Groq, and your teacher for each submission.</p>
+                        </div>
+                    </div>
+
+                    {% if practice_history %}
+                    <div class="sync-submissions-list">
+                        {% for item in practice_history %}
+                        {% set eval_data = item.evaluation or {} %}
+                        <div class="submission-result-card">
+                            <!-- Card Head -->
+                            <div class="submission-result-head">
+                                <div>
+                                    <h4>{{ item.lesson }}</h4>
+                                    <div class="submission-meta-strip">
+                                        <span>📅 Submitted: {{ item.submitted_at[:16] if item.submitted_at else '—' }}</span>
+                                        <span>•</span>
+                                        <span class="submission-status {% if item.media_present %}status-success{% else %}status-muted{% endif %}">
+                                            {{ item.media_status }}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 8px; align-items: center;">
+                                    <a href="{{ url_for('exercise', lesson_id=item.lesson_id) }}" class="mini-btn" style="text-decoration: none;">
+                                        🔄 Practice again
+                                    </a>
+                                </div>
+                            </div>
+
+                            <!-- 3 Sync Score Boxes: Gemini AI, Groq AI, Teacher -->
+                            <div class="sync-score-grid">
+                                <!-- Gemini AI Score -->
+                                <div class="sync-score-box gemini">
+                                    <div class="sync-box-head">
+                                        <strong>🌿 Gemini AI</strong>
+                                        <span style="font-size: 11px; color: #166534; font-weight: 700;">Google AI</span>
+                                    </div>
+                                    <div>
+                                        <span class="sync-big-score">{{ item.gemini_score if item.gemini_score is not none else '—' }}</span>
+                                        <small style="color: #64748b; font-size: 13px;">/ 100 points</small>
+                                    </div>
+                                    <div class="sync-rubric-chips">
+                                        <span class="sync-rubric-chip">Phát âm: {{ item.gemini_criteria.get('pronunciation', 0) }}</span>
+                                        <span class="sync-rubric-chip">Ngữ pháp: {{ item.gemini_criteria.get('grammar', 0) }}</span>
+                                        <span class="sync-rubric-chip">Trôi chảy: {{ item.gemini_criteria.get('fluency', 0) }}</span>
+                                        <span class="sync-rubric-chip">Đúng đề: {{ item.gemini_criteria.get('relevance', 0) }}</span>
+                                    </div>
+                                </div>
+
+                                <!-- Groq AI Score -->
+                                <div class="sync-score-box groq">
+                                    <div class="sync-box-head">
+                                        <strong>⚡ Groq AI</strong>
+                                        <span style="font-size: 11px; color: #6d28d9; font-weight: 700;">LLaMA Fast</span>
+                                    </div>
+                                    <div>
+                                        <span class="sync-big-score">{{ item.groq_score if item.groq_score is not none else '—' }}</span>
+                                        <small style="color: #64748b; font-size: 13px;">/ 100 points</small>
+                                    </div>
+                                    <div class="sync-rubric-chips">
+                                        <span class="sync-rubric-chip">Phát âm: {{ item.groq_criteria.get('pronunciation', 0) }}</span>
+                                        <span class="sync-rubric-chip">Ngữ pháp: {{ item.groq_criteria.get('grammar', 0) }}</span>
+                                        <span class="sync-rubric-chip">Trôi chảy: {{ item.groq_criteria.get('fluency', 0) }}</span>
+                                        <span class="sync-rubric-chip">Đúng đề: {{ item.groq_criteria.get('relevance', 0) }}</span>
+                                    </div>
+                                </div>
+
+                                <!-- Teacher Official Score -->
+                                <div class="sync-score-box teacher">
+                                    <div class="sync-box-head">
+                                        <strong>👨‍🏫 Teacher score</strong>
+                                        <span style="font-size: 11px; color: #9a3412; font-weight: 700;">Chính thức</span>
+                                    </div>
+                                    <div>
+                                        <span class="sync-big-score">{{ item.teacher_score if item.teacher_score is not none else (item.overall_score or 0) }}</span>
+                                        <small style="color: #64748b; font-size: 13px;">/ 100 points</small>
+                                    </div>
+                                    <div class="sync-rubric-chips">
+                                        <span class="sync-rubric-chip">Phát âm: {{ item.teacher_criteria.get('pronunciation', 0) }}</span>
+                                        <span class="sync-rubric-chip">Ngữ pháp: {{ item.teacher_criteria.get('grammar', 0) }}</span>
+                                        <span class="sync-rubric-chip">Trôi chảy: {{ item.teacher_criteria.get('fluency', 0) }}</span>
+                                        <span class="sync-rubric-chip">Đúng đề: {{ item.teacher_criteria.get('relevance', 0) }}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Teacher Feedback Callout -->
+                            {% if item.teacher_note %}
+                            <div class="teacher-feedback-callout">
+                                <strong>👨‍🏫 Teacher feedback:</strong>
+                                <p>"{{ item.teacher_note }}"</p>
+                            </div>
+                            {% else %}
+                            <div style="margin: 0 20px 14px; padding: 10px 14px; background: #fffdf5; border: 1px dashed #fde68a; border-radius: 10px; font-size: 13px; color: #92400e;">
+                                ⏳ Đang chờ giáo viên xem xét và gửi thêm nhận xét chi tiết.
+                            </div>
+                            {% endif %}
+
+                            <!-- Expandable Detailed Task Breakdown -->
+                            <details class="submission-details-toggle">
+                                <summary>🔍 Xem chi tiết câu trả lời & Đánh giá từng Task (Task 1, 2, 3)</summary>
+                                <div class="submission-details-content">
+                                    <!-- Task 1 Breakdown -->
+                                    {% set t1 = eval_data.get('task_1', {}) %}
+                                    <div class="task-sync-tile">
+                                        <div class="task-sync-tile-head">
+                                            <strong>Task 1: Trả lời câu hỏi (Speaking/Writing)</strong>
+                                            <span style="font-size: 12px; font-weight: 700; color: #2563eb;">
+                                                Teacher score: {{ t1.get('teacher', {}).get('score', item.overall_score or '—') }} / 100
+                                            </span>
+                                        </div>
+                                        <div style="font-size: 13px;">
+                                            <strong style="color: #475569;">Câu trả lời của bạn:</strong>
+                                            <div style="background: #fff; padding: 8px 12px; border-radius: 6px; border: 1px solid #e2e8f0; margin-top: 4px; color: #0f172a;">
+                                                {{ item.task_1_answer or item.task_1 or 'No answer submitted' }}
+                                            </div>
+                                        </div>
+                                        <div class="task-sync-ai-grid">
+                                            <div class="task-sync-ai-pill gemini">
+                                                <strong>🌿 Gemini AI ({{ t1.get('gemini', {}).get('score', '—') }}/100):</strong>
+                                                <span>{{ t1.get('gemini', {}).get('feedback') or 'Đang xử lý đánh giá...' }}</span>
+                                            </div>
+                                            <div class="task-sync-ai-pill groq">
+                                                <strong>⚡ Groq AI ({{ t1.get('groq', {}).get('score', '—') }}/100):</strong>
+                                                <span>{{ t1.get('groq', {}).get('feedback') or 'Đang xử lý đánh giá...' }}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Task 2 Breakdown -->
+                                    {% set t2 = eval_data.get('task_2', {}) %}
+                                    <div class="task-sync-tile">
+                                        <div class="task-sync-tile-head">
+                                            <strong>Task 2: Sắp xếp câu (Sentence Structure)</strong>
+                                            <span style="font-size: 12px; font-weight: 700; color: #059669;">
+                                                Teacher score: {{ t2.get('teacher', {}).get('score', item.overall_score or '—') }} / 100
+                                            </span>
+                                        </div>
+                                        <div style="font-size: 13px;">
+                                            <strong style="color: #475569;">Câu bạn đã sắp xếp:</strong>
+                                            <div style="background: #fff; padding: 8px 12px; border-radius: 6px; border: 1px solid #e2e8f0; margin-top: 4px; color: #0f172a;">
+                                                {{ item.task_2_answer or item.task_2 or 'No answer submitted' }}
+                                            </div>
+                                        </div>
+                                        <div class="task-sync-ai-grid">
+                                            <div class="task-sync-ai-pill gemini">
+                                                <strong>🌿 Gemini AI ({{ t2.get('gemini', {}).get('score', '—') }}/100):</strong>
+                                                <span>{{ t2.get('gemini', {}).get('feedback') or 'Đang xử lý đánh giá...' }}</span>
+                                            </div>
+                                            <div class="task-sync-ai-pill groq">
+                                                <strong>⚡ Groq AI ({{ t2.get('groq', {}).get('score', '—') }}/100):</strong>
+                                                <span>{{ t2.get('groq', {}).get('feedback') or 'Đang xử lý đánh giá...' }}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Task 3 Breakdown -->
+                                    {% set t3 = eval_data.get('task_3', {}) %}
+                                    <div class="task-sync-tile">
+                                        <div class="task-sync-tile-head">
+                                            <strong>Task 3: Ghi âm giọng nói (Voice Recording)</strong>
+                                            <span style="font-size: 12px; font-weight: 700; color: #d97706;">
+                                                Teacher score: {{ t3.get('teacher', {}).get('score', item.overall_score or '—') }} / 100
+                                            </span>
+                                        </div>
+                                        {% if item.audio_url %}
+                                        <div style="margin-top: 4px;">
+                                            <strong style="font-size: 12px; color: #475569;">🎧 Bản ghi âm của bạn:</strong>
+                                            <audio controls preload="metadata" src="{{ item.audio_url }}" style="width: 100%; height: 38px; margin-top: 4px;"></audio>
+                                        </div>
+                                        {% endif %}
+                                        <div style="font-size: 13px; margin-top: 4px;">
+                                            <strong style="color: #475569;">Bản phiên âm giọng nói (Speech-to-Text):</strong>
+                                            <div style="background: #fff; padding: 8px 12px; border-radius: 6px; border: 1px solid #e2e8f0; margin-top: 4px; color: #0f172a;">
+                                                {{ item.task_3_transcript or item.task_3 or 'No recording submitted' }}
+                                            </div>
+                                        </div>
+                                        <div class="task-sync-ai-grid">
+                                            <div class="task-sync-ai-pill gemini">
+                                                <strong>🌿 Gemini AI ({{ t3.get('gemini', {}).get('score', '—') }}/100):</strong>
+                                                <span>{{ t3.get('gemini', {}).get('feedback') or 'Đang xử lý đánh giá...' }}</span>
+                                            </div>
+                                            <div class="task-sync-ai-pill groq">
+                                                <strong>⚡ Groq AI ({{ t3.get('groq', {}).get('score', '—') }}/100):</strong>
+                                                <span>{{ t3.get('groq', {}).get('feedback') or 'Đang xử lý đánh giá...' }}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </details>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="student-empty-state">
+                        <span aria-hidden="true">🎤</span>
+                        <strong>No practice submissions yet.</strong>
+                        <p>Choose a lesson above to get started and receive feedback from AI and your teacher.</p>
+                        {% if lessons %}
+                        <a class="primary-btn" href="{{ url_for('exercise', lesson_id=lessons[0].id) }}" style="text-decoration: none;">
+                            Start your first practice
+                        </a>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </section>
+            {% else %}
+                <section class="stats-grid">
+                    <div class="stat-card accent-blue">
+                        <span>Available lessons</span>
+                        <strong>{{ student_progress.available }}</strong>
+                    </div>
+                    <div class="stat-card accent-green">
+                        <span>Completed tasks</span>
+                        <strong>{{ student_progress.completed }}</strong>
+                    </div>
+                    <div class="stat-card accent-orange">
+                        <span>Pending tasks</span>
+                        <strong>{{ student_progress.pending }}</strong>
+                    </div>
+                </section>
+
+                <section class="content-grid">
+                    <div class="card wide-card">
+                        <div class="card-header">
+                            <h3>{{ t('continue_learning') }}</h3>
+                            <a href="{{ url_for('lessons_page') }}">View all</a>
+                        </div>
+                        <div class="schedule-grid">
+                            {% for week in weekly_schedule %}
+                            <div class="week-card">
+                                <div class="week-header">
+                                    <strong>{{ week.label }}</strong>
+                                    <span>{{ week.date_range }}</span>
+                                </div>
+                                <ul>
+                                    {% for lesson in week.lessons %}
+                                    <li>{{ lesson.title }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>{{ t('daily_task') }}</h3>
+                        </div>
+                        <ul class="task-list">
+                            <li>Watch 1 dialogue video</li>
+                            <li>Complete sentence builder</li>
+                            <li>Record 1 speaking answer</li>
+                        </ul>
+                    </div>
+                </section>
+            {% endif %}
+
+            {% if active_section == 'dashboard' or not active_section or active_section == 'practice' %}
+            <section class="card wide-card" style="margin-top: 24px;">
+
+                <div class="card-header">
+                    <h3>Recent practice history</h3>
+                    <a href="{{ url_for('practice_page') }}" style="color: #2563eb; font-weight: 700; text-decoration: none;">View all practice →</a>
+                </div>
+                <div class="table-wrap">
+                    <table class="data-table practice-table">
+                        <thead>
+                            <tr>
+                                <th>Lesson</th>
+                                <th>Submitted</th>
+                                <th>Gemini AI</th>
+                                <th>Groq AI</th>
+                                <th>Teacher</th>
+                                <th>Evaluation criteria</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in practice_history[:6] %}
+                            <tr>
+                                <td>
+                                    <strong>{{ item.lesson }}</strong>
+                                </td>
+                                <td>
+                                    <div class="submission-cell-stack">
+                                        <span>{{ item.submitted_at[:16] if item.submitted_at else '—' }}</span>
+                                        <span class="submission-status {% if item.media_present %}status-success{% else %}status-muted{% endif %}">{{ item.media_status }}</span>
+                                    </div>
+                                </td>
+                                <td><span class="score-pill" style="background: #dcfce7; color: #166534; font-weight: 700;">{{ item.gemini_score if item.gemini_score is not none else '—' }}</span></td>
+                                <td><span class="score-pill" style="background: #ede9fe; color: #5b21b6; font-weight: 700;">{{ item.groq_score if item.groq_score is not none else '—' }}</span></td>
+                                <td><span class="score-pill" style="background: #ffedd5; color: #9a3412; font-weight: 800;">{{ item.teacher_score if item.teacher_score is not none else (item.overall_score or 0) }}</span></td>
+                                <td>
+                                    <div class="mini-score-stack">
+                                        <span>P: {{ item.teacher_criteria.get('pronunciation', 0) if item.teacher_criteria else item.gemini_criteria.get('pronunciation', 0) }}</span>
+                                        <span>G: {{ item.teacher_criteria.get('grammar', 0) if item.teacher_criteria else item.gemini_criteria.get('grammar', 0) }}</span>
+                                        <span>F: {{ item.teacher_criteria.get('fluency', 0) if item.teacher_criteria else item.gemini_criteria.get('fluency', 0) }}</span>
+                                    </div>
+                                </td>
+                                <td>
+                                    <a href="{{ url_for('practice_page') }}" class="mini-btn" style="text-decoration: none; padding: 4px 8px; font-size: 12px;">
+                                        View results
+                                    </a>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="7">No practice submissions yet.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+            {% endif %}
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CVA Let's speak!</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="login-body">
+    <div class="login-shell">
+        <div class="login-panel">
+            <div class="brand-block">
+                <div class="brand-mark">
+                    <img src="{{ url_for('static', filename='images/cva-logo.png') }}" alt="CVA logo">
+                </div>
+                <h1>CVA Let's speak!</h1>
+                <p>Learning English through real-life situations</p>
+            </div>
+
+            <form class="login-form">
+                <label>Email</label>
+                <input type="email" value="student01@school.com" />
+
+                <label>Password</label>
+                <input type="password" value="123456" />
+
+                <div class="login-actions">
+                    <a class="primary-btn" href="{{ url_for('dashboard') }}">Student Login</a>
+                    <a class="secondary-btn" href="{{ url_for('teacher') }}">Teacher Login</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,1408 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Review student submission - {{ submission.student_name }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <style>
+        .review-v2-container {
+            max-width: 1200px;
+            margin: 0 auto 60px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+        .review-hero {
+            background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 60%, #3b82f6 100%);
+            border-radius: 20px;
+            padding: 24px 30px;
+            color: #fff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+            box-shadow: 0 10px 25px rgba(37, 99, 235, 0.25);
+        }
+        .review-hero-info {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+        }
+        .student-avatar {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 26px;
+            font-weight: 800;
+            border: 2px solid rgba(255, 255, 255, 0.4);
+        }
+        .review-hero-text h2 {
+            margin: 0 0 6px;
+            font-size: 24px;
+            color: #fff;
+        }
+        .review-hero-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            font-size: 13px;
+            opacity: 0.95;
+        }
+        .hero-meta-pill {
+            background: rgba(255, 255, 255, 0.18);
+            padding: 4px 12px;
+            border-radius: 20px;
+            backdrop-filter: blur(4px);
+        }
+        .review-hero-scores {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .hero-score-badge {
+            background: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 14px;
+            padding: 10px 18px;
+            text-align: center;
+            min-width: 110px;
+        }
+        .hero-score-badge span {
+            display: block;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            opacity: 0.85;
+        }
+        .hero-score-badge strong {
+            font-size: 26px;
+            line-height: 1.2;
+        }
+        .ai-banner-strip {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-radius: 16px;
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 14px;
+        }
+        .ai-banner-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .ai-banner-title h4 {
+            margin: 0;
+            color: #166534;
+            font-size: 16px;
+            font-weight: 700;
+        }
+        .ai-banner-title p {
+            margin: 3px 0 0;
+            font-size: 13px;
+            color: #15803d;
+        }
+        .overall-scores-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 18px;
+        }
+        @media (max-width: 860px) {
+            .overall-scores-grid { grid-template-columns: 1fr; }
+        }
+        .overall-card {
+            border-radius: 16px;
+            padding: 18px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+            border: 1px solid;
+            background: #fff;
+        }
+        .overall-card.card-gemini {
+            border-color: #86efac;
+            background: linear-gradient(145deg, #f0fdf4, #ffffff);
+        }
+        .overall-card.card-groq {
+            border-color: #c4b5fd;
+            background: linear-gradient(145deg, #f5f3ff, #ffffff);
+        }
+        .overall-card.card-teacher {
+            border-color: #fed7aa;
+            background: linear-gradient(145deg, #fff7ed, #ffffff);
+        }
+        .overall-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .overall-card-header h4 {
+            margin: 0;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .overall-card .big-num {
+            font-size: 34px;
+            font-weight: 800;
+            line-height: 1;
+        }
+        .card-gemini .big-num { color: #15803d; }
+        .card-groq .big-num { color: #6d28d9; }
+        .card-teacher .big-num { color: #c2410c; }
+        .rubric-tag-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            font-size: 12px;
+        }
+        .rubric-tag {
+            background: #fff;
+            padding: 3px 8px;
+            border-radius: 6px;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            font-weight: 600;
+            color: #334155;
+        }
+        .quick-apply-btn {
+            margin-top: 4px;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 12.5px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+            color: #fff;
+        }
+        .card-gemini .quick-apply-btn { background: #16a34a; }
+        .card-gemini .quick-apply-btn:hover { background: #15803d; }
+        .card-groq .quick-apply-btn { background: #7c3aed; }
+        .card-groq .quick-apply-btn:hover { background: #6d28d9; }
+
+        /* Integrated Task Box */
+        .task-box {
+            background: #fff;
+            border-radius: 18px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 4px 18px rgba(15, 23, 42, 0.05);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            transition: border-color 0.2s;
+        }
+        .task-box:hover {
+            border-color: #cbd5e1;
+        }
+        .task-box-header {
+            padding: 16px 22px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .task-box-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .task-badge {
+            background: #2563eb;
+            color: #fff;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .task-badge-t2 { background: #059669; }
+        .task-badge-t3 { background: #d97706; }
+        .task-box-title h3 {
+            margin: 0;
+            font-size: 17px;
+            color: #1e293b;
+        }
+        .task-score-control-box {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: linear-gradient(135deg, #eff6ff, #dbeafe);
+            border: 1.5px solid #93c5fd;
+            padding: 6px 14px;
+            border-radius: 14px;
+            box-shadow: 0 2px 6px rgba(37, 99, 235, 0.08);
+            transition: all 0.2s;
+        }
+        .task-score-control-box:focus-within {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+        }
+        .task-score-control-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #1e40af;
+            font-weight: 800;
+        }
+        .task-score-input-wrap {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #ffffff;
+            border: 1.5px solid #93c5fd;
+            border-radius: 10px;
+            padding: 2px 8px 2px 10px;
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+            transition: border-color 0.2s;
+        }
+        .task-score-input-wrap:focus-within {
+            border-color: #2563eb;
+        }
+        .task-score-main-input {
+            width: 76px;
+            border: none;
+            outline: none;
+            font-size: 20px;
+            font-weight: 800;
+            color: #1d4ed8;
+            text-align: right;
+            padding: 2px 0;
+            background: transparent;
+        }
+        .task-score-max-badge {
+            font-size: 13px;
+            font-weight: 700;
+            color: #64748b;
+        }
+
+        .task-box-body {
+            padding: 22px;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        /* Student Answer Presentation */
+        .student-work-card {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 14px 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .student-work-card strong {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #64748b;
+        }
+        .student-response-text {
+            font-size: 15px;
+            line-height: 1.6;
+            color: #0f172a;
+            white-space: pre-wrap;
+            background: #fff;
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+        }
+        .keywords-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 4px;
+        }
+        .keyword-item {
+            background: #e0f2fe;
+            color: #0369a1;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        /* AI Task Evaluation Row */
+        .ai-task-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+        }
+        @media (max-width: 768px) {
+            .ai-task-row { grid-template-columns: 1fr; }
+        }
+        .ai-task-card {
+            border-radius: 12px;
+            padding: 12px 14px;
+            border: 1px solid;
+            font-size: 13px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .ai-task-card.gemini {
+            background: #f0fdf4;
+            border-color: #bbf7d0;
+        }
+        .ai-task-card.groq {
+            background: #f5f3ff;
+            border-color: #ddd6fe;
+        }
+        .ai-task-card-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .ai-task-card-head strong {
+            font-size: 14px;
+        }
+        .gemini .ai-task-card-head strong { color: #166534; }
+        .groq .ai-task-card-head strong { color: #6d28d9; }
+        .ai-feedback-quote {
+            color: #334155;
+            line-height: 1.45;
+            font-style: italic;
+        }
+
+        /* Teacher Rubric Form Area */
+        .rubric-eval-section {
+            background: #fffdfa;
+            border: 1px solid #fed7aa;
+            border-radius: 14px;
+            padding: 16px 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+        .rubric-eval-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .rubric-eval-header h4 {
+            margin: 0;
+            color: #9a3412;
+            font-size: 14.5px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .rubric-presets {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .preset-btn {
+            background: #fff;
+            border: 1px solid #fed7aa;
+            color: #9a3412;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .preset-btn:hover {
+            background: #ea580c;
+            color: #fff;
+            border-color: #ea580c;
+        }
+        .rubric-criteria-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+        }
+        @media (max-width: 900px) {
+            .rubric-criteria-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 520px) {
+            .rubric-criteria-grid { grid-template-columns: 1fr; }
+        }
+        .criterion-card {
+            background: #fff;
+            border: 1px solid #fed7aa;
+            border-radius: 10px;
+            padding: 10px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .criterion-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            font-weight: 700;
+            color: #7c2d12;
+        }
+        .criterion-max {
+            font-size: 11px;
+            color: #9a3412;
+            font-weight: 600;
+            background: #ffedd5;
+            padding: 1px 6px;
+            border-radius: 4px;
+        }
+        .criterion-desc {
+            font-size: 11px;
+            color: #64748b;
+            line-height: 1.3;
+        }
+        .criterion-input-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 2px;
+        }
+        .criterion-input-row input {
+            width: 100%;
+            height: 38px;
+            border: 1px solid #fdba74;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 16px;
+            font-weight: 700;
+            color: #9a3412;
+            background: #fff;
+        }
+        .criterion-input-row input:focus {
+            outline: none;
+            border-color: #ea580c;
+            box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.15);
+        }
+
+        /* Teacher Final Section */
+        .teacher-final-card {
+            background: #fff;
+            border-radius: 18px;
+            border: 1px solid #cbd5e1;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+            box-shadow: 0 4px 18px rgba(15, 23, 42, 0.05);
+        }
+        .teacher-final-grid {
+            display: grid;
+            grid-template-columns: 200px 1fr;
+            gap: 20px;
+            align-items: start;
+        }
+        @media (max-width: 768px) {
+            .teacher-final-grid { grid-template-columns: 1fr; }
+        }
+        .final-score-display-box {
+            background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+            border: 2px solid #93c5fd;
+            border-radius: 16px;
+            padding: 20px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            align-items: center;
+        }
+        .final-score-display-box span {
+            font-size: 12px;
+            text-transform: uppercase;
+            font-weight: 800;
+            color: #1e40af;
+            letter-spacing: 0.05em;
+        }
+        .final-score-input-wrap {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            background: #ffffff;
+            border: 2px solid #60a5fa;
+            border-radius: 12px;
+            padding: 4px 10px;
+            box-shadow: 0 2px 6px rgba(37, 99, 235, 0.1);
+        }
+        .final-score-input-wrap input {
+            border: none;
+            background: transparent;
+            font-size: 36px;
+            font-weight: 900;
+            color: #1d4ed8;
+            text-align: center;
+            width: 90px;
+            padding: 0;
+            outline: none;
+        }
+        .final-score-max-badge {
+            font-size: 16px;
+            font-weight: 800;
+            color: #64748b;
+        }
+        .final-score-display-box small {
+            color: #2563eb;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .teacher-note-area {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .teacher-note-area label {
+            font-weight: 700;
+            color: #1e293b;
+            font-size: 15px;
+        }
+        .teacher-note-area textarea {
+            width: 100%;
+            min-height: 110px;
+            border: 1px solid #cbd5e1;
+            border-radius: 12px;
+            padding: 12px 14px;
+            font-size: 14.5px;
+            line-height: 1.5;
+            color: #0f172a;
+            resize: vertical;
+        }
+        .teacher-note-area textarea:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+        }
+        .quick-note-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .quick-note-chip {
+            background: #f1f5f9;
+            border: 1px solid #cbd5e1;
+            color: #334155;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .quick-note-chip:hover {
+            background: #e2e8f0;
+            border-color: #94a3b8;
+        }
+        .bottom-action-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 10px;
+            border-top: 1px solid #e2e8f0;
+        }
+        .save-review-btn {
+            background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+            color: #fff;
+            border: none;
+            padding: 12px 28px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 6px 16px rgba(22, 163, 74, 0.25);
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .save-review-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 20px rgba(22, 163, 74, 0.35);
+        }
+        .media-player-box {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 12px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+    </style>
+</head>
+<body class="unified-page premium-page review-page">
+    <div class="page-shell review-v2-container">
+        <!-- Top Navigation -->
+        <header class="page-topbar review-page-topbar premium-review-topbar" style="margin-bottom: 0;">
+            <div>
+                        <a href="{{ url_for('teacher_practice') }}" class="back-link"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg><span>Practice submissions</span></a>
+            </div>
+            <div class="page-title">
+                <h2 style="font-size: 1.5rem;">Review student submission</h2>
+            </div>
+        </header>
+
+        {% if warning %}
+        <div class="alert-box {{ 'success-box' if sync_success else 'warning-box' }}" role="status">{{ warning }}</div>
+        {% endif %}
+
+        <!-- Hero Header -->
+        <section class="review-hero">
+            <div class="review-hero-info">
+                <div class="student-avatar">
+                    {{ submission.student_name[:1] if submission.student_name else 'S' }}
+                </div>
+                <div class="review-hero-text">
+                    <h2>{{ submission.student_name }}</h2>
+                    <div class="review-hero-meta">
+                        <span class="hero-meta-pill">Class: {{ submission.class_name or '—' }}</span>
+                        <span class="hero-meta-pill">Lesson: {{ submission.title_en or submission.title_vi }}</span>
+                        <span class="hero-meta-pill">Submitted: {{ submission.created_at[:16] if submission.created_at else '—' }}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="review-hero-scores">
+                <div class="hero-score-badge">
+                    <span>Official score</span>
+                    <strong id="hero_final_score">{{ submission.score or 0 }}</strong>
+                </div>
+                <div>
+                    <span class="review-status-badge {% if submission.audio_path or submission.drive_url %}status-success{% else %}status-muted{% endif %}" style="font-size: 12px; padding: 6px 12px;">
+                        {% if submission.audio_path or submission.drive_url %}✓ File recorded{% else %}File not recorded{% endif %}
+                    </span>
+                </div>
+            </div>
+        </section>
+
+        {% set evaluation = submission.evaluation or {} %}
+        {% set extracted = submission.extracted_scores or {} %}
+        {% set gemini_overall = submission.gemini_score %}
+        {% set groq_overall = submission.groq_score %}
+        {% set gemini_crit = extracted.get('gemini_criteria', {}) %}
+        {% set groq_crit = extracted.get('groq_criteria', {}) %}
+        {% set teacher_crit = extracted.get('teacher_criteria', {}) %}
+
+        <!-- AI Banner & Re-evaluate -->
+        <div class="ai-banner-strip">
+            <div class="ai-banner-title">
+                <span style="font-size: 24px;">🤖</span>
+                <div>
+                    <h4>Automatic AI grading (Google Gemini & Groq LLaMA)</h4>
+                    <p>Two independent AI systems evaluate pronunciation, grammar, fluency, and content.</p>
+                </div>
+            </div>
+            <form method="POST" action="{{ url_for('ai_grade_submission', submission_id=submission.id) }}" style="margin: 0;">
+                <button type="submit" class="primary-btn" style="background: #2563eb; color: white; padding: 9px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; border: none; display: flex; align-items: center; gap: 6px;">
+                    ⚡ Regrade with both AI systems
+                </button>
+            </form>
+        </div>
+
+        <!-- 3 Overall Comparison Cards -->
+        <section class="overall-scores-grid">
+            <!-- Gemini Overall -->
+            <div class="overall-card card-gemini">
+                <div class="overall-card-header">
+                    <h4><span>🌿</span> Google Gemini AI</h4>
+                    <span style="background: #dcfce7; color: #166534; font-size: 11px; padding: 2px 7px; border-radius: 4px; font-weight: 700;">Multimodal</span>
+                </div>
+                <div>
+                    <span class="big-num">{{ gemini_overall if gemini_overall is not none else '—' }}</span>
+                    <small style="color: #64748b; font-size: 14px;">/ 100 points</small>
+                </div>
+                <div class="rubric-tag-row">
+                    <span class="rubric-tag">Phát âm: {{ gemini_crit.get('pronunciation', 0) }}</span>
+                    <span class="rubric-tag">Ngữ pháp: {{ gemini_crit.get('grammar', 0) }}</span>
+                    <span class="rubric-tag">Trôi chảy: {{ gemini_crit.get('fluency', 0) }}</span>
+                    <span class="rubric-tag">Đúng đề: {{ gemini_crit.get('relevance', 0) }}</span>
+                </div>
+                {% if gemini_overall is not none %}
+                <button type="button" class="quick-apply-btn" onclick="applyAIScoresToAll({{ gemini_overall }}, {{ gemini_crit.get('pronunciation', 0) }}, {{ gemini_crit.get('grammar', 0) }}, {{ gemini_crit.get('fluency', 0) }}, {{ gemini_crit.get('relevance', 0) }}, 'Gemini AI: {{ gemini_overall }}/100. Đánh giá phát âm và ngữ pháp tốt.')">
+                    ✓ Apply Gemini scores to all tasks
+                </button>
+                {% endif %}
+            </div>
+
+            <!-- Groq Overall -->
+            <div class="overall-card card-groq">
+                <div class="overall-card-header">
+                    <h4><span>⚡</span> Groq LLaMA AI</h4>
+                    <span style="background: #ede9fe; color: #5b21b6; font-size: 11px; padding: 2px 7px; border-radius: 4px; font-weight: 700;">Ultra Fast</span>
+                </div>
+                <div>
+                    <span class="big-num">{{ groq_overall if groq_overall is not none else '—' }}</span>
+                    <small style="color: #64748b; font-size: 14px;">/ 100 points</small>
+                </div>
+                <div class="rubric-tag-row">
+                    <span class="rubric-tag">Phát âm: {{ groq_crit.get('pronunciation', 0) }}</span>
+                    <span class="rubric-tag">Ngữ pháp: {{ groq_crit.get('grammar', 0) }}</span>
+                    <span class="rubric-tag">Trôi chảy: {{ groq_crit.get('fluency', 0) }}</span>
+                    <span class="rubric-tag">Đúng đề: {{ groq_crit.get('relevance', 0) }}</span>
+                </div>
+                {% if groq_overall is not none %}
+                <button type="button" class="quick-apply-btn" onclick="applyAIScoresToAll({{ groq_overall }}, {{ groq_crit.get('pronunciation', 0) }}, {{ groq_crit.get('grammar', 0) }}, {{ groq_crit.get('fluency', 0) }}, {{ groq_crit.get('relevance', 0) }}, 'Groq AI: {{ groq_overall }}/100. Câu trả lời đạt yêu cầu.')">
+                    ✓ Apply Groq scores to all tasks
+                </button>
+                {% endif %}
+            </div>
+
+            <!-- Teacher Overall -->
+            <div class="overall-card card-teacher">
+                <div class="overall-card-header">
+                    <h4><span>👨‍🏫</span> Teacher score</h4>
+                    <span style="background: #ffedd5; color: #9a3412; font-size: 11px; padding: 2px 7px; border-radius: 4px; font-weight: 700;">Chính thức</span>
+                </div>
+                <div>
+                    <span class="big-num" id="summary_teacher_score">{{ submission.score or 0 }}</span>
+                    <small style="color: #64748b; font-size: 14px;">/ 100 points</small>
+                </div>
+                <div class="rubric-tag-row">
+                    <span class="rubric-tag">Phát âm: {{ teacher_crit.get('pronunciation', 0) }}</span>
+                    <span class="rubric-tag">Ngữ pháp: {{ teacher_crit.get('grammar', 0) }}</span>
+                    <span class="rubric-tag">Trôi chảy: {{ teacher_crit.get('fluency', 0) }}</span>
+                    <span class="rubric-tag">Đúng đề: {{ teacher_crit.get('relevance', 0) }}</span>
+                </div>
+                <div style="margin-top: 6px; font-size: 12.5px; color: #9a3412; font-weight: 600;">
+                    {{ '✓ Review completed' if submission.teacher_note else '⏳ Awaiting teacher review below' }}
+                </div>
+            </div>
+        </section>
+
+        <!-- Review Form -->
+        <form method="POST" id="teacherReviewForm" style="display: flex; flex-direction: column; gap: 24px;">
+
+            {% set task_1_question = submission.question or submission.answer_payload.get('task_1_question') or submission.answer_payload.get('question') or 'Trả lời câu hỏi bằng tiếng Anh.' %}
+            {% set task_1_answer = submission.answer_payload.get('task_1_answer') or submission.answer_payload.get('answer_1') or submission.answer_payload.get('answer') or '' %}
+            {% set task_2_text = submission.answer_payload.get('task_2_answer') or submission.answer_payload.get('answer_2') or submission.answer_payload.get('sentence') or '' %}
+            {% set task_3_text = submission.answer_payload.get('task_3_transcript') or submission.answer_payload.get('transcript_3') or '' %}
+            {% set audio_url = submission.answer_payload.get('audio_url') or submission.audio_path or submission.drive_url or '' %}
+            {% set video_url = submission.answer_payload.get('video_url') or submission.drive_url or '' %}
+
+            <!-- ================= TASK 1 ================= -->
+            {% set t1_eval = evaluation.get('task_1', {}) if evaluation else {} %}
+            {% set t1_g = t1_eval.get('gemini', {}) or {} %}
+            {% set t1_q = t1_eval.get('groq', {}) or {} %}
+            {% set t1_t = t1_eval.get('teacher', {}) or {} %}
+            {% set t1_crit = t1_t.get('criteria', {}) or {} %}
+
+            <!-- Precalculate default or existing criteria values (0 - 25) -->
+            {% set t1_p = t1_crit.get('pronunciation', t1_t.get('pronunciation', 0)) %}
+            {% set t1_g_pts = t1_crit.get('grammar', t1_t.get('grammar', 0)) %}
+            {% set t1_f = t1_crit.get('fluency', t1_t.get('fluency', 0)) %}
+            {% set t1_r = t1_crit.get('relevance', t1_t.get('relevance', 0)) %}
+            {% set t1_sum = t1_p + t1_g_pts + t1_f + t1_r %}
+            {% set t1_score = t1_t.get('score', t1_sum if t1_sum > 0 else (submission.score or 0)) %}
+
+            <div class="task-box">
+                <div class="task-box-header">
+                    <div class="task-box-title">
+                        <span class="task-badge">Task 1</span>
+                        <h3>Speaking / Writing: Trả lời câu hỏi</h3>
+                    </div>
+                    <!-- Task Score Control (Editable & Auto-calculated, supports decimals like 43.2) -->
+                    <div class="task-score-control-box">
+                        <span class="task-score-control-label">Task 1 score:</span>
+                        <div class="task-score-input-wrap">
+                            <input type="number" id="teacher_task_1_score" name="teacher_task_1_score" class="task-score-main-input" min="0" max="100" step="any" value="{{ t1_score }}" oninput="onTaskDirectInput('task_1')" placeholder="0-100">
+                            <span class="task-score-max-badge">/ 100</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="task-box-body">
+                    <!-- Prompt & Student Answer -->
+                    <div class="student-work-card">
+                        <strong>📌 Exercise question:</strong>
+                        <div style="font-size: 14.5px; font-weight: 600; color: #1e40af;">{{ task_1_question }}</div>
+                    </div>
+
+                    <div class="student-work-card">
+                        <strong>💬 Student answer:</strong>
+                        <div class="student-response-text">{{ task_1_answer or 'No answer submitted.' }}</div>
+                        {% if task_1_answer %}
+                        <div style="margin-top: 6px;">
+                            <strong style="font-size: 11px;">Từ khóa nhận diện:</strong>
+                            <div class="keywords-list">
+                                {% for word in task_1_answer.split()[:14] %}
+                                <span class="keyword-item">{{ word|replace(',', '')|replace('.', '')|replace('!', '')|replace('?', '') }}</span>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- AI Comparison for Task 1 -->
+                    <div class="ai-task-row">
+                        <div class="ai-task-card gemini">
+                            <div class="ai-task-card-head">
+                                <strong>🌿 Gemini AI</strong>
+                                <span style="font-weight: 700; color: #166534; font-size: 14px;">{{ t1_g.get('score') if t1_g.get('score') is not none else '—' }} / 100</span>
+                            </div>
+                            <div class="ai-feedback-quote">"{{ t1_g.get('feedback') or 'No feedback available.' }}"</div>
+                            {% if t1_g.get('score') is not none %}
+                            <button type="button" class="preset-btn" style="width: fit-content; margin-top: 4px;" onclick="applyAIToTask('task_1', {{ t1_g.get('score', 0) }}, {{ t1_g.get('pronunciation', 0) }}, {{ t1_g.get('grammar', 0) }}, {{ t1_g.get('fluency', 0) }}, {{ t1_g.get('relevance', 0) }})">
+                                ✓ Apply Gemini score to Task 1
+                            </button>
+                            {% endif %}
+                        </div>
+
+                        <div class="ai-task-card groq">
+                            <div class="ai-task-card-head">
+                                <strong>⚡ Groq AI</strong>
+                                <span style="font-weight: 700; color: #6d28d9; font-size: 14px;">{{ t1_q.get('score') if t1_q.get('score') is not none else '—' }} / 100</span>
+                            </div>
+                            <div class="ai-feedback-quote">"{{ t1_q.get('feedback') or 'No feedback available.' }}"</div>
+                            {% if t1_q.get('score') is not none %}
+                            <button type="button" class="preset-btn" style="width: fit-content; margin-top: 4px;" onclick="applyAIToTask('task_1', {{ t1_q.get('score', 0) }}, {{ t1_q.get('pronunciation', 0) }}, {{ t1_q.get('grammar', 0) }}, {{ t1_q.get('fluency', 0) }}, {{ t1_q.get('relevance', 0) }})">
+                                ✓ Apply Groq score to Task 1
+                            </button>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Teacher Rubric: 4 criteria x 25 pts = 100 pts -->
+                    <div class="rubric-eval-section">
+                        <div class="rubric-eval-header">
+                            <h4><span>📝</span> Task 1 rubric (up to 100 points)</h4>
+                            <div class="rubric-presets">
+                                <span style="font-size: 12px; color: #64748b; align-self: center;">Quick score:</span>
+                                <button type="button" class="preset-btn" onclick="setTaskPreset('task_1', 25)">100 Xuất sắc (25x4)</button>
+                                <button type="button" class="preset-btn" onclick="setTaskPreset('task_1', 22)">88 Giỏi (22x4)</button>
+                                <button type="button" class="preset-btn" onclick="setTaskPreset('task_1', 20)">80 Khá (20x4)</button>
+                                <button type="button" class="preset-btn" onclick="setTaskPreset('task_1', 17.5)">70 Đạt (17.5x4)</button>
+                            </div>
+                        </div>
+
+                        <div class="rubric-criteria-grid">
+                            <div class="criterion-card">
+                                <div class="criterion-label">
+                                    <span>Phát âm & Ngữ điệu</span>
+                                    <span class="criterion-max">Tối đa 25</span>
+                                </div>
+                                <span class="criterion-desc">Độ rõ ràng, trọng âm từ và ngữ điệu tự nhiên.</span>
+                                <div class="criterion-input-row">
+                                    <input type="number" id="teacher_task_1_pronunciation" name="teacher_task_1_pronunciation" min="0" max="25" step="any" value="{{ t1_p }}" oninput="updateTaskScore('task_1')">
+                                </div>
+                            </div>
+
+                            <div class="criterion-card">
+                                <div class="criterion-label">
+                                    <span>Ngữ pháp & Từ vựng</span>
+                                    <span class="criterion-max">Tối đa 25</span>
+                                </div>
+                                <span class="criterion-desc">Sử dụng đúng cấu trúc thì, từ vựng phù hợp.</span>
+                                <div class="criterion-input-row">
+                                    <input type="number" id="teacher_task_1_grammar" name="teacher_task_1_grammar" min="0" max="25" step="any" value="{{ t1_g_pts }}" oninput="updateTaskScore('task_1')">
+                                </div>
+                            </div>
+
+                            <div class="criterion-card">
+                                <div class="criterion-label">
+                                    <span>Độ trôi chảy & Lưu loát</span>
+                                    <span class="criterion-max">Tối đa 25</span>
+                                </div>
+                                <span class="criterion-desc">Tốc độ nói đều, ít ngắc ngứ, phản xạ nhanh.</span>
+                                <div class="criterion-input-row">
+                                    <input type="number" id="teacher_task_1_fluency" name="teacher_task_1_fluency" min="0" max="25" step="any" value="{{ t1_f }}" oninput="updateTaskScore('task_1')">
+                                </div>
+                            </div>
+
+                            <div class="criterion-card">
+                                <div class="criterion-label">
+                                    <span>Nội dung & Đúng đề</span>
+                                    <span class="criterion-max">Tối đa 25</span>
+                                </div>
+                                <span class="criterion-desc">Trả lời đúng trọng tâm câu hỏi, đủ ý.</span>
+                                <div class="criterion-input-row">
+                                    <input type="number" id="teacher_task_1_relevance" name="teacher_task_1_relevance" min="0" max="25" step="any" value="{{ t1_r }}" oninput="updateTaskScore('task_1')">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ================= TASK 2 ================= -->
+            {% set t2_eval = evaluation.get('task_2', {}) if evaluation else {} %}
+            {% set t2_g = t2_eval.get('gemini', {}) or {} %}
+            {% set t2_q = t2_eval.get('groq', {}) or {} %}
+            {% set t2_t = t2_eval.get('teacher', {}) or {} %}
+            {% set t2_crit = t2_t.get('criteria', {}) or {} %}
+
+            {% set t2_p = t2_crit.get('pronunciation', t2_t.get('pronunciation', 0)) %}
+            {% set t2_g_pts = t2_crit.get('grammar', t2_t.get('grammar', 0)) %}
+            {% set t2_f = t2_crit.get('fluency', t2_t.get('fluency', 0)) %}
+            {% set t2_r = t2_crit.get('relevance', t2_t.get('relevance', 0)) %}
+            {% set t2_sum = t2_p + t2_g_pts + t2_f + t2_r %}
+            {% set t2_score = t2_t.get('score', t2_sum if t2_sum > 0 else (submission.score or 0)) %}
+
+            <div class="task-box">
+                <div class="task-box-header">
+                    <div class="task-box-title">
+                        <span class="task-badge task-badge-t2">Task 2</span>
+                        <h3>Sentence Structure: Sắp xếp câu hoàn chỉnh</h3>
+                    </div>
+                    <!-- Task Score Control (Editable & Auto-calculated, supports decimals like 43.2) -->
+                    <div class="task-score-control-box">
+                        <span class="task-score-control-label">Task 2 score:</span>
+                        <div class="task-score-input-wrap">
+                            <input type="number" id="teacher_task_2_score" name="teacher_task_2_score" class="task-score-main-input" min="0" max="100" step="any" value="{{ t2_score }}" oninput="onTaskDirectInput('task_2')" placeholder="0-100">
+                            <span class="task-score-max-badge">/ 100</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="task-box-body">
+                    <!-- Expected Sentence vs Student Ordered Sentence -->
+                    <div class="student-work-card">
+                        <strong>🎯 Lesson sentence model:</strong>
+                        <div style="font-size: 14.5px; font-weight: 600; color: #047857;">
+                            {{ submission.sentence_words or 'Exercise sentence model.' }}
+                        </div>
+                    </div>
+
+                    <div class="student-work-card">
+                        <strong>💬 Student response:</strong>
+                        <div class="student-response-text" style="color: #065f46;">
+                            {{ task_2_text or 'No arranged sentence submitted.' }}
+                        </div>
+                    </div>
+
+                    <!-- AI Comparison for Task 2 -->
+                    <div class="ai-task-row">
+                        <div class="ai-task-card gemini">
+                            <div class="ai-task-card-head">
+                                <strong>🌿 Gemini AI</strong>
+                                <span style="font-weight: 700; color: #166534; font-size: 14px;">{{ t2_g.get('score') if t2_g.get('score') is not none else '—' }} / 100</span>
+                            </div>
+                            <div class="ai-feedback-quote">"{{ t2_g.get('feedback') or 'No feedback available.' }}"</div>
+                            {% if t2_g.get('score') is not none %}
+                            <button type="button" class="preset-btn" style="width: fit-content; margin-top: 4px;" onclick="applyAIToTask('task_2', {{ t2_g.get('score', 0) }}, {{ t2_g.get('pronunciation', 0) }}, {{ t2_g.get('grammar', 0) }}, {{ t2_g.get('fluency', 0) }}, {{ t2_g.get('relevance', 0) }})">
+                                ✓ Apply Gemini score to Task 2
+                            </button>
+                            {% endif %}
+                        </div>
+
+                        <div class="ai-task-card groq">
+                            <div class="ai-task-card-head">
+                                <strong>⚡ Groq AI</strong>
+                                <span style="font-weight: 700; color: #6d28d9; font-size: 14px;">{{ t2_q.get('score') if t2_q.get('score') is not none else '—' }} / 100</span>
+                            </div>
+                            <div class="ai-feedback-quote">"{{ t2_q.get('feedback') or 'No feedback available.' }}"</div>
+                            {% if t2_q.get('score') is not none %}
+                            <button type="button" class="preset-btn" style="width: fit-content; margin-top: 4px;" onclick="applyAIToTask('task_2', {{ t2_q.get('score', 0) }}, {{ t2_q.get('pronunciation', 0) }}, {{ t2_q.get('grammar', 0) }}, {{ t2_q.get('fluency', 0) }}, {{ t2_q.get('relevance', 0) }})">
+                                ✓ Apply Groq score to Task 2
+                            </button>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Teacher Rubric: 4 criteria x 25 pts = 100 pts -->
+                    <div class="rubric-eval-section">
+                        <div class="rubric-eval-header">
+                            <h4><span>📝</span> Task 2 rubric (up to 100 points)</h4>
+                            <div class="rubric-presets">
+                                <span style="font-size: 12px; color: #64748b; align-self: center;">Quick score:</span>
+                                <button type="button" class="preset-btn" onclick="setTaskPreset('task_2', 25)">100 Xuất sắc (25x4)</button>
+                                <button type="button" class="preset-btn" onclick="setTaskPreset('task_2', 22)">88 Giỏi (22x4)</button>
+                                <button type="button" class="preset-btn" onclick="setTaskPreset('task_2', 20)">80 Khá (20x4)</button>
+                                <button type="button" class="preset-btn" onclick="setTaskPreset('task_2', 17.5)">70 Đạt (17.5x4)</button>
+                            </div>
+                        </div>
+
+                        <div class="rubric-criteria-grid">
+                            <div class="criterion-card">
+                                <div class="criterion-label">
+                                    <span>Đúng thứ tự từ vựng</span>
+                                    <span class="criterion-max">Tối đa 25</span>
+                                </div>
+                                <span class="criterion-desc">Sắp xếp các từ theo đúng cú pháp câu tiếng Anh.</span>
+                                <div class="criterion-input-row">
+                                    <input type="number" id="teacher_task_2_pronunciation" name="teacher_task_2_pronunciation" min="0" max="25" step="any" value="{{ t2_p }}" oninput="updateTaskScore('task_2')">
+                                </div>
+                            </div>
+
+                            <div class="criterion-card">
+                                <div class="criterion-label">
+                                    <span>Ngữ pháp & Dấu câu</span>
+                                    <span class="criterion-max">Tối đa 25</span>
+                                </div>
+                                <span class="criterion-desc">Chia động từ, dấu câu và trật tự bổ ngữ chuẩn xác.</span>
+                                <div class="criterion-input-row">
+                                    <input type="number" id="teacher_task_2_grammar" name="teacher_task_2_grammar" min="0" max="25" step="any" value="{{ t2_g_pts }}" oninput="updateTaskScore('task_2')">
+                                </div>
+                            </div>
+
+                            <div class="criterion-card">
+                                <div class="criterion-label">
+                                    <span>Độ hoàn thiện & Trôi chảy</span>
+                                    <span class="criterion-max">Tối đa 25</span>
+                                </div>
+                                <span class="criterion-desc">Câu văn trọn vẹn, không bị rời rạc hay thiếu từ.</span>
+                                <div class="criterion-input-row">
+                                    <input type="number" id="teacher_task_2_fluency" name="teacher_task_2_fluency" min="0" max="25" step="any" value="{{ t2_f }}" oninput="updateTaskScore('task_2')">
+                                </div>
+                            </div>
+
+                            <div class="criterion-card">
+                                <div class="criterion-label">
+                                    <span>Relevance to the lesson</span>
+                                    <span class="criterion-max">Tối đa 25</span>
+                                </div>
+                                <span class="criterion-desc">Expresses the intended meaning of the lesson.</span>
+                                <div class="criterion-input-row">
+                                    <input type="number" id="teacher_task_2_relevance" name="teacher_task_2_relevance" min="0" max="25" step="any" value="{{ t2_r }}" oninput="updateTaskScore('task_2')">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ================= TASK 3 ================= -->
+            {% set t3_eval = evaluation.get('task_3', {}) if evaluation else {} %}
+            {% set t3_g = t3_eval.get('gemini', {}) or {} %}
+            {% set t3_q = t3_eval.get('groq', {}) or {} %}
+            {% set t3_t = t3_eval.get('teacher', {}) or {} %}
+            {% set t3_crit = t3_t.get('criteria', {}) or {} %}
+
+            {% set t3_p = t3_crit.get('pronunciation', t3_t.get('pronunciation', 0)) %}
+            {% set t3_g_pts = t3_crit.get('grammar', t3_t.get('grammar', 0)) %}
+            {% set t3_f = t3_crit.get('fluency', t3_t.get('fluency', 0)) %}
+            {% set t3_r = t3_crit.get('relevance', t3_t.get('relevance', 0)) %}
+            {% set t3_sum = t3_p + t3_g_pts + t3_f + t3_r %}
+            {% set t3_score = t3_t.get('score', t3_sum if t3_sum > 0 else (submission.score or 0)) %}
+
+            <div class="task-box">
+                <div class="task-box-header">
+                    <div class="task-box-title">
+                        <span class="task-badge task-badge-t3">Task 3</span>
+                        <h3>Voice / Video: Ghi âm giọng nói thực tế</h3>
+                    </div>
+                    <!-- Task Score Control (Editable & Auto-calculated, supports decimals like 43.2) -->
+                    <div class="task-score-control-box">
+                        <span class="task-score-control-label">Task 3 score:</span>
+                        <div class="task-score-input-wrap">
+                            <input type="number" id="teacher_task_3_score" name="teacher_task_3_score" class="task-score-main-input" min="0" max="100" step="any" value="{{ t3_score }}" oninput="onTaskDirectInput('task_3')" placeholder="0-100">
+                            <span class="task-score-max-badge">/ 100</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="task-box-body">
+                    <!-- Audio & Video Player -->
+                    <div class="media-player-box">
+                        <strong style="font-size: 12px; text-transform: uppercase; color: #64748b;">🎙️ Listen to the recording / view the student's video:</strong>
+                        <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-top: 4px;">
+                            {% if audio_url %}
+                            <div style="flex: 1; min-width: 260px;">
+                                <audio controls preload="metadata" src="{{ audio_url }}" style="width: 100%; height: 42px;"></audio>
+                            </div>
+                            {% else %}
+                            <div style="color: #64748b; font-size: 13px;">No audio recording available.</div>
+                            {% endif %}
+
+                            {% if video_url %}
+                            <div style="max-width: 280px;">
+                                <video controls preload="metadata" src="{{ video_url }}" style="width: 100%; max-height: 160px; border-radius: 8px;"></video>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Transcript from Speech-to-Text -->
+                    <div class="student-work-card">
+                        <strong>📝 Bản phiên âm giọng nói (Speech-to-Text):</strong>
+                        <div class="student-response-text" style="color: #1e293b;">
+                            {{ task_3_text or 'No transcript available (no recording submitted or the file has not been processed).' }}
+                        </div>
+                    </div>
+
+                    <!-- AI Comparison for Task 3 -->
+                    <div class="ai-task-row">
+                        <div class="ai-task-card gemini">
+                            <div class="ai-task-card-head">
+                                <strong>🌿 Gemini AI</strong>
+                                <span style="font-weight: 700; color: #166534; font-size: 14px;">{{ t3_g.get('score') if t3_g.get('score') is not none else '—' }} / 100</span>
+                            </div>
+                            <div class="ai-feedback-quote">"{{ t3_g.get('feedback') or 'No feedback available.' }}"</div>
+                            {% if t3_g.get('score') is not none %}
+                            <button type="button" class="preset-btn" style="width: fit-content; margin-top: 4px;" onclick="applyAIToTask('task_3', {{ t3_g.get('score', 0) }}, {{ t3_g.get('pronunciation', 0) }}, {{ t3_g.get('grammar', 0) }}, {{ t3_g.get('fluency', 0) }}, {{ t3_g.get('relevance', 0) }})">
+                                ✓ Apply Gemini score to Task 3
+                            </button>
+                            {% endif %}
+                        </div>
+
+                        <div class="ai-task-card groq">
+                            <div class="ai-task-card-head">
+                                <strong>⚡ Groq AI</strong>
+                                <span style="font-weight: 700; color: #6d28d9; font-size: 14px;">{{ t3_q.get('score') if t3_q.get('score') is not none else '—' }} / 100</span>
+                            </div>
+                            <div class="ai-feedback-quote">"{{ t3_q.get('feedback') or 'No feedback available.' }}"</div>
+                            {% if t3_q.get('score') is not none %}
+                            <button type="button" class="preset-btn" style="width: fit-content; margin-top: 4px;" onclick="applyAIToTask('task_3', {{ t3_q.get('score', 0) }}, {{ t3_q.get('pronunciation', 0) }}, {{ t3_q.get('grammar', 0) }}, {{ t3_q.get('fluency', 0) }}, {{ t3_q.get('relevance', 0) }})">
+                                ✓ Apply Groq score to Task 3
+                            </button>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Teacher Rubric: 4 criteria x 25 pts = 100 pts -->
+                    <div class="rubric-eval-section">
+                        <div class="rubric-eval-header">
+                            <h4><span>📝</span> Task 3 rubric (up to 100 points)</h4>
+                            <div class="rubric-presets">
+                                <span style="font-size: 12px; color: #64748b; align-self: center;">Quick score:</span>
+                                <button type="button" class="preset-btn" onclick="setTaskPreset('task_3', 25)">100 Xuất sắc (25x4)</button>
+                                <button type="button" class="preset-btn" onclick="setTaskPreset('task_3', 22)">88 Giỏi (22x4)</button>
+                                <button type="button" class="preset-btn" onclick="setTaskPreset('task_3', 20)">80 Khá (20x4)</button>
+                                <button type="button" class="preset-btn" onclick="setTaskPreset('task_3', 17.5)">70 Đạt (17.5x4)</button>
+                            </div>
+                        </div>
+
+                        <div class="rubric-criteria-grid">
+                            <div class="criterion-card">
+                                <div class="criterion-label">
+                                    <span>Phát âm & Âm đuôi (Ending sounds)</span>
+                                    <span class="criterion-max">Tối đa 25</span>
+                                </div>
+                                <span class="criterion-desc">Phát âm chuẩn âm vị, âm cuối (s/es/ed) rõ ràng.</span>
+                                <div class="criterion-input-row">
+                                    <input type="number" id="teacher_task_3_pronunciation" name="teacher_task_3_pronunciation" min="0" max="25" step="0.5" value="{{ t3_p }}" oninput="updateTaskScore('task_3')">
+                                </div>
+                            </div>
+
+                            <div class="criterion-card">
+                                <div class="criterion-label">
+                                    <span>Ngữ pháp & Từ vựng nói</span>
+                                    <span class="criterion-max">Tối đa 25</span>
+                                </div>
+                                <span class="criterion-desc">Cấu trúc câu tự nhiên, đa dạng từ vựng trong văn nói.</span>
+                                <div class="criterion-input-row">
+                                    <input type="number" id="teacher_task_3_grammar" name="teacher_task_3_grammar" min="0" max="25" step="0.5" value="{{ t3_g_pts }}" oninput="updateTaskScore('task_3')">
+                                </div>
+                            </div>
+
+                            <div class="criterion-card">
+                                <div class="criterion-label">
+                                    <span>Lưu loát & Tự tin (Fluency)</span>
+                                    <span class="criterion-max">Tối đa 25</span>
+                                </div>
+                                <span class="criterion-desc">Tự nhiên, không ấp úng, giữ nhịp độ nói tốt.</span>
+                                <div class="criterion-input-row">
+                                    <input type="number" id="teacher_task_3_fluency" name="teacher_task_3_fluency" min="0" max="25" step="0.5" value="{{ t3_f }}" oninput="updateTaskScore('task_3')">
+                                </div>
+                            </div>
+
+                            <div class="criterion-card">
+                                <div class="criterion-label">
+                                    <span>Nội dung & Khả năng truyền đạt</span>
+                                    <span class="criterion-max">Tối đa 25</span>
+                                </div>
+                                <span class="criterion-desc">Truyền đạt đầy đủ ý tưởng, trả lời trọng tâm.</span>
+                                <div class="criterion-input-row">
+                                    <input type="number" id="teacher_task_3_relevance" name="teacher_task_3_relevance" min="0" max="25" step="0.5" value="{{ t3_r }}" oninput="updateTaskScore('task_3')">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ================= TEACHER FINAL SCORE & FEEDBACK ================= -->
+            <div class="teacher-final-card">
+                <div class="teacher-final-grid">
+                    <!-- Final Score Display -->
+                    <div class="final-score-display-box">
+                        <span>Final score</span>
+                        <input type="number" id="final_score" name="final_score" min="0" max="100" value="{{ submission.score or 0 }}">
+                        <small>Trung bình 3 task (Max 100)</small>
+                    </div>
+
+                    <!-- Teacher Note -->
+                    <div class="teacher-note-area">
+                        <label for="teacher_note">Teacher feedback and advice:</label>
+                        <textarea id="teacher_note" name="teacher_note" placeholder="Enter detailed feedback, praise, or suggestions for improvement...">{{ submission.teacher_note or '' }}</textarea>
+                        
+                        <div class="quick-note-chips">
+                            <span style="font-size: 12px; color: #64748b; align-self: center;">Mẫu nhận xét nhanh:</span>
+                            <button type="button" class="quick-note-chip" onclick="addFeedbackSnippet('Phát âm to, rõ ràng và có tiến bộ.')">+ Phát âm rõ</button>
+                            <button type="button" class="quick-note-chip" onclick="addFeedbackSnippet('Cần chú ý thêm âm cuối và ngữ điệu câu hỏi.')">+ Lưu ý âm cuối</button>
+                            <button type="button" class="quick-note-chip" onclick="addFeedbackSnippet('Cấu trúc ngữ pháp câu tốt, vốn từ vựng phong phú.')">+ Ngữ pháp tốt</button>
+                            <button type="button" class="quick-note-chip" onclick="addFeedbackSnippet('Nói rất tự nhiên và trôi chảy. Tiếp tục phát huy nhé!')">+ Rất lưu loát</button>
+                            <button type="button" class="quick-note-chip" onclick="addFeedbackSnippet('Excellent work on today’s exercise!')">+ Excellent</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bottom-action-bar">
+                    <a href="{{ url_for('teacher_practice') }}" class="back-link review-bottom-back"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg><span>Back to list</span></a>
+                    <button type="submit" class="save-review-btn">
+                        <span>💾</span> Save review & sync scores
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <script>
+    // Real-time calculation: 4 criteria (max 25 each) sum to Task Score (max 100)
+    function updateTaskScore(taskKey) {
+        const pInput = document.getElementById('teacher_' + taskKey + '_pronunciation');
+        const gInput = document.getElementById('teacher_' + taskKey + '_grammar');
+        const fInput = document.getElementById('teacher_' + taskKey + '_fluency');
+        const rInput = document.getElementById('teacher_' + taskKey + '_relevance');
+
+        const p = pInput ? Math.min(25, Math.max(0, parseFloat(pInput.value) || 0)) : 0;
+        const g = gInput ? Math.min(25, Math.max(0, parseFloat(gInput.value) || 0)) : 0;
+        const f = fInput ? Math.min(25, Math.max(0, parseFloat(fInput.value) || 0)) : 0;
+        const r = rInput ? Math.min(25, Math.max(0, parseFloat(rInput.value) || 0)) : 0;
+
+        const total = Math.min(100, Math.round(p + g + f + r));
+
+        // Update badge display
+        const badge = document.getElementById(taskKey + '_score_badge');
+        if (badge) {
+            badge.textContent = total + ' / 100';
+        }
+
+        // Update hidden field
+        const hiddenField = document.getElementById('teacher_' + taskKey + '_score');
+        if (hiddenField) {
+            hiddenField.value = total;
+        }
+
+        updateOverallFinalScore();
+    }
+
+    // Auto calculate overall final score as average of the 3 tasks
+    function updateOverallFinalScore() {
+        const t1 = parseFloat(document.getElementById('teacher_task_1_score')?.value) || 0;
+        const t2 = parseFloat(document.getElementById('teacher_task_2_score')?.value) || 0;
+        const t3 = parseFloat(document.getElementById('teacher_task_3_score')?.value) || 0;
+
+        const avg = Math.round((t1 + t2 + t3) / 3);
+
+        const finalInput = document.getElementById('final_score');
+        if (finalInput) {
+            finalInput.value = avg;
+        }
+        const heroBadge = document.getElementById('hero_final_score');
+        if (heroBadge) {
+            heroBadge.textContent = avg;
+        }
+        const summaryBadge = document.getElementById('summary_teacher_score');
+        if (summaryBadge) {
+            summaryBadge.textContent = avg;
+        }
+    }
+
+    // Quick presets for a specific task (e.g. 25, 22, 20, 17.5 each)
+    function setTaskPreset(taskKey, pointsEach) {
+        const p = document.getElementById('teacher_' + taskKey + '_pronunciation');
+        const g = document.getElementById('teacher_' + taskKey + '_grammar');
+        const f = document.getElementById('teacher_' + taskKey + '_fluency');
+        const r = document.getElementById('teacher_' + taskKey + '_relevance');
+
+        if (p) p.value = pointsEach;
+        if (g) g.value = pointsEach;
+        if (f) f.value = pointsEach;
+        if (r) r.value = pointsEach;
+
+        updateTaskScore(taskKey);
+    }
+
+    // Apply AI score to a specific task
+    function applyAIToTask(taskKey, score, pron, gram, flu, rel) {
+        // AI criteria may be 0-100; convert to 0-25
+        function to25(val) {
+            const v = parseFloat(val) || 0;
+            if (v > 25) {
+                return Math.round((v / 4) * 10) / 10;
+            }
+            return Math.round(v * 10) / 10;
+        }
+
+        const p = document.getElementById('teacher_' + taskKey + '_pronunciation');
+        const g = document.getElementById('teacher_' + taskKey + '_grammar');
+        const f = document.getElementById('teacher_' + taskKey + '_fluency');
+        const r = document.getElementById('teacher_' + taskKey + '_relevance');
+
+        if (p) p.value = to25(pron);
+        if (g) g.value = to25(gram);
+        if (f) f.value = to25(flu);
+        if (r) r.value = to25(rel);
+
+        updateTaskScore(taskKey);
+    }
+
+    // Apply AI scores to all 3 tasks
+    function applyAIScoresToAll(score, pron, gram, flu, rel, note) {
+        ['task_1', 'task_2', 'task_3'].forEach(taskKey => {
+            applyAIToTask(taskKey, score, pron, gram, flu, rel);
+        });
+        const noteEl = document.getElementById('teacher_note');
+        if (noteEl && (!noteEl.value.trim() || noteEl.value.includes('AI'))) {
+            noteEl.value = note;
+        }
+    }
+
+    // Add snippet to teacher note
+    function addFeedbackSnippet(text) {
+        const noteEl = document.getElementById('teacher_note');
+        if (!noteEl) return;
+        if (noteEl.value.trim().length > 0) {
+            noteEl.value += ' ' + text;
+        } else {
+            noteEl.value = text;
+        }
+        noteEl.focus();
+    }
+
+    // When final score is manually altered by teacher, update hero badges
+    document.getElementById('final_score')?.addEventListener('input', function() {
+        const val = this.value;
+        const heroBadge = document.getElementById('hero_final_score');
+        if (heroBadge) heroBadge.textContent = val;
+        const summaryBadge = document.getElementById('summary_teacher_score');
+        if (summaryBadge) summaryBadge.textContent = val;
+    });
+
+    // Run initial calculation to ensure badges match on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        ['task_1', 'task_2', 'task_3'].forEach(taskKey => {
+            const pInput = document.getElementById('teacher_' + taskKey + '_pronunciation');
+            const gInput = document.getElementById('teacher_' + taskKey + '_grammar');
+            const fInput = document.getElementById('teacher_' + taskKey + '_fluency');
+            const rInput = document.getElementById('teacher_' + taskKey + '_relevance');
+            const p = pInput ? parseFloat(pInput.value) || 0 : 0;
+            const g = gInput ? parseFloat(gInput.value) || 0 : 0;
+            const f = fInput ? parseFloat(fInput.value) || 0 : 0;
+            const r = rInput ? parseFloat(rInput.value) || 0 : 0;
+            const total = Math.min(100, Math.round(p + g + f + r));
+            if (total > 0) {
+                const badge = document.getElementById(taskKey + '_score_badge');
+                if (badge) badge.textContent = total + ' / 100';
+                const hiddenField = document.getElementById('teacher_' + taskKey + '_score');
+                if (hiddenField) hiddenField.value = total;
+            }
+        });
+    });
+    </script>
+</body>
+</html>

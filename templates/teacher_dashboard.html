@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ t('teacher_dashboard') }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="app-shell teacher-workspace-shell">
+        <aside class="sidebar">
+            <button class="sidebar-toggle" type="button" aria-label="Toggle sidebar">☰</button>
+            <div class="logo-wrap">
+                <span class="logo-mark"><img src="{{ url_for('static', filename='images/cva-logo.png') }}" alt="CVA logo"></span>
+                <span class="logo-text">CVA Let's speak!</span>
+            </div>
+            <nav>
+                <a class="active" href="{{ url_for('dashboard') }}"><span class="nav-icon">🏠</span><span class="nav-label">{{ t('dashboard') }}</span></a>
+                <a href="{{ url_for('teacher_students') }}"><span class="nav-icon">👥</span><span class="nav-label">{{ t('student') }}</span></a>
+                <a href="{{ url_for('teacher_lessons') }}"><span class="nav-icon">📘</span><span class="nav-label">{{ t('lessons') }}</span></a>
+                <a href="{{ url_for('practice_page') }}"><span class="nav-icon">🎤</span><span class="nav-label">Practice</span></a>
+                <a href="{{ url_for('teacher_profile') }}"><span class="nav-icon">👤</span><span class="nav-label">My account</span></a>
+                <a href="{{ url_for('logout') }}"><span class="nav-icon">⎋</span><span class="nav-label">{{ t('logout') }}</span></a>
+            </nav>
+            <div class="language-switcher sidebar-lang">
+                <button type="button" data-lang="vi" class="lang-btn {% if lang == 'vi' %}active{% endif %}">VI</button>
+                <button type="button" data-lang="en" class="lang-btn {% if lang == 'en' %}active{% endif %}">EN</button>
+            </div>
+        </aside>
+
+        <main class="main-panel">
+            <header class="topbar">
+                <div>
+                    <h2>Teacher dashboard</h2>
+                    <p>{{ t('continue_learning') }}</p>
+                </div>
+                <div class="user-box">{{ user.full_name }}</div>
+            </header>
+
+            {% if warning %}
+            <section class="card wide-card">
+                <div class="alert-box {{ 'success-box' if sync_success else 'warning-box' }}" role="status">{{ warning }}</div>
+            </section>
+            {% endif %}
+
+            <section class="dashboard-overview-grid" aria-label="School overview">
+                <article class="dashboard-overview-card overview-blue">
+                    <span class="overview-icon" aria-hidden="true">▦</span>
+                    <div><small>Total classes</small><strong>{{ summary.class_count }}</strong></div>
+                </article>
+                <article class="dashboard-overview-card overview-violet">
+                    <span class="overview-icon" aria-hidden="true">♟</span>
+                    <div><small>Total students</small><strong>{{ summary.total_students }}</strong></div>
+                </article>
+                <article class="dashboard-overview-card overview-green">
+                    <span class="overview-icon" aria-hidden="true">✓</span>
+                    <div><small>Active students</small><strong>{{ summary.active_students }}</strong></div>
+                </article>
+                <article class="dashboard-overview-card overview-orange">
+                    <span class="overview-icon" aria-hidden="true">★</span>
+                    <div><small>Average score</small><strong>{{ summary.avg_score }}%</strong></div>
+                </article>
+            </section>
+
+            <section class="card dashboard-classes-card">
+                <div class="dashboard-classes-header">
+                    <div>
+                        <span class="dashboard-section-kicker">CLASS DIRECTORY</span>
+                        <h3>Class overview</h3>
+                        <p>Browse class activity without filling the dashboard with every class at once.</p>
+                    </div>
+                    <label class="dashboard-class-search">
+                        <span class="sr-only">Search classes</span>
+                        <span aria-hidden="true">⌕</span>
+                        <input id="dashboard-class-search" type="search" placeholder="Search classes" autocomplete="off">
+                    </label>
+                </div>
+                <div id="dashboard-class-grid" class="dashboard-class-grid" data-page-size="8">
+                    {% for class in summary.classes %}
+                    <article class="dashboard-class-card" data-class-name="{{ class.name|lower }}">
+                        <div class="dashboard-class-card-heading">
+                            <span class="dashboard-class-mark" aria-hidden="true">{{ class.name[:1]|upper }}</span>
+                            <div>
+                                <h4>{{ class.name }}</h4>
+                                <span>{{ class.students }} student{{ '' if class.students == 1 else 's' }}</span>
+                            </div>
+                        </div>
+                        <div class="dashboard-class-progress">
+                            <div class="dashboard-class-progress-label">
+                                <span>Active students</span>
+                                <strong>{{ class.completed }}/{{ class.students }}</strong>
+                            </div>
+                            <div class="dashboard-progress-track" role="progressbar" aria-label="Active students in {{ class.name }}" aria-valuemin="0" aria-valuemax="{{ class.students }}" aria-valuenow="{{ class.completed }}">
+                                <span style="width: {{ ((class.completed / class.students * 100)|round|int) if class.students else 0 }}%"></span>
+                            </div>
+                        </div>
+                        <div class="dashboard-class-score">
+                            <span>Average score</span>
+                            <strong>{{ class.avg_score }}%</strong>
+                        </div>
+                    </article>
+                    {% else %}
+                    <div class="teacher-empty-state">
+                        <strong>No classes yet</strong>
+                        <span>Class summaries will appear here when students are assigned.</span>
+                    </div>
+                    {% endfor %}
+                    <div id="dashboard-class-empty" class="dashboard-class-empty" hidden></div>
+                </div>
+                <footer class="dashboard-class-footer">
+                    <span id="dashboard-class-count" aria-live="polite"></span>
+                    <nav class="dashboard-class-pagination" aria-label="Class pages">
+                        <button id="dashboard-class-prev" type="button" class="dashboard-page-btn" aria-label="Previous classes">←</button>
+                        <span id="dashboard-class-page" class="dashboard-page-indicator"></span>
+                        <button id="dashboard-class-next" type="button" class="dashboard-page-btn" aria-label="Next classes">→</button>
+                    </nav>
+                </footer>
+            </section>
+
+            <section class="content-grid">
+                <div class="card wide-card">
+                    <div class="card-header">
+                        <h3>Weekly lesson schedule</h3>
+                        <div class="table-actions">
+                            <a href="{{ url_for('teacher_lessons') }}">Manage units</a>
+                            <form method="POST" action="{{ url_for('teacher_sync_google') }}" class="inline-form" onsubmit="return confirm('Sync Student and Lesson data with Google Sheets now?');">
+                                <input type="hidden" name="sheet" value="all">
+                                <button class="sync-icon-btn" type="submit" title="Sync Student and Lesson data with Google Sheets" aria-label="Sync Student and Lesson data with Google Sheets"><span aria-hidden="true">↻</span></button>
+                            </form>
+                        </div>
+                    </div>
+                    <div class="schedule-grid compact-weekly-schedule">
+                        {% for week in summary.weekly_plan %}
+                        <details class="week-card compact-week-card">
+                            <summary class="compact-week-summary">
+                                <span class="week-summary-main">
+                                    <strong>{{ week.label }}</strong>
+                                    <span>{{ week.lessons|length }} lesson{{ '' if week.lessons|length == 1 else 's' }}</span>
+                                </span>
+                                <span class="week-summary-meta">{{ week.date_range }}</span>
+                                <span class="week-summary-toggle" aria-hidden="true">⌄</span>
+                            </summary>
+                            <ul class="compact-week-lessons">
+                                {% for lesson in week.lessons %}
+                                <li><span class="week-lesson-dot" aria-hidden="true"></span><span>{{ lesson.title }}</span></li>
+                                {% endfor %}
+                            </ul>
+                        </details>
+                        {% else %}
+                        <div class="teacher-empty-state">
+                            <strong>No lessons scheduled</strong>
+                            <span>Add lesson units to see the weekly plan here.</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Recent submissions</h3>
+                    </div>
+                    <ul class="task-list">
+                        {% for item in summary.recent %}
+                        <li>
+                            <div class="recent-submission-heading">
+                                <strong>{{ item.full_name }}</strong>
+                                <span class="recent-overall-score">{{ item.score or 0 }} pts</span>
+                            </div>
+                            <small>{{ item.title_vi or item.title_en or 'Lesson' }}</small>
+                            <div class="recent-ai-scores" aria-label="AI scores">
+                                <span class="ai-score-chip ai-gemini">Gemini <strong>{{ item.gemini_score if item.gemini_score is not none else '—' }}</strong></span>
+                                <span class="ai-score-chip ai-groq">Groq <strong>{{ item.groq_score if item.groq_score is not none else '—' }}</strong></span>
+                            </div>
+                            <time class="recent-submission-time" datetime="{{ item.created_at }}">{{ item.created_at[:16] if item.created_at else 'Time unavailable' }}</time>
+                        </li>
+                        {% else %}
+                        <li>No recent submissions yet.</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </section>
+
+            <section class="card wide-card">
+                <div class="card-header">
+                    <h3>Practice overview</h3>
+                    <span class="small-muted-text">Latest 8 submissions</span>
+                </div>
+                <div class="table-wrap">
+                    <table class="data-table practice-table dashboard-practice-table">
+                        <thead>
+                            <tr>
+                                <th>Student</th>
+                                <th>Class</th>
+                                <th>Lesson</th>
+                                <th>Overall</th>
+                                <th>Gemini</th>
+                                <th>Groq</th>
+                                <th>Submitted</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in summary.practice %}
+                            <tr>
+                                <td data-label="Student"><span class="practice-student-link">{{ item.student_name }}</span></td>
+                                <td data-label="Class">{{ item.student_class }}</td>
+                                <td data-label="Lesson"><span class="practice-lesson-title">{{ item.lesson }}</span></td>
+                                <td data-label="Overall"><span class="score-pill practice-score">{{ item.overall_score if item.overall_score is not none else '—' }}</span></td>
+                                <td data-label="Gemini"><span class="score-pill practice-score gemini-score">{{ item.gemini_score if item.gemini_score is not none else '—' }}</span></td>
+                                <td data-label="Groq"><span class="score-pill practice-score groq-score">{{ item.groq_score if item.groq_score is not none else '—' }}</span></td>
+                                <td data-label="Submitted"><time class="practice-submitted-time" datetime="{{ item.created_at }}">{{ item.created_at[:16] if item.created_at else '—' }}</time></td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="7">No recorded practice yet.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit lesson</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="editor-page unified-page premium-page">
+    <div class="page-shell small-shell">
+        <header class="editor-header">
+            <a href="{{ url_for('teacher_lessons') }}" class="back-link"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg><span>Back</span></a>
+            <span class="header-badge">Lesson Editor</span>
+            <div class="language-switcher sidebar-lang">
+                <button type="button" data-lang="vi" class="lang-btn {% if lang == 'vi' %}active{% endif %}">VI</button>
+                <button type="button" data-lang="en" class="lang-btn {% if lang == 'en' %}active{% endif %}">EN</button>
+            </div>
+        </header>
+
+        <div class="editor-panel lesson-editor-panel">
+            <div class="editor-topcard accent-soft-purple">
+                <div class="avatar">L</div>
+                <div>
+                    <p class="eyebrow">Lesson content</p>
+                    <h2>{{ lesson.title_en or lesson.title_vi or 'Lesson' }}</h2>
+                </div>
+            </div>
+
+            {% if form_error %}<div class="alert-box warning-box" role="alert">{{ form_error }}</div>{% endif %}
+            <form method="POST" class="editor-form" id="lesson-editor-form">
+                <div class="form-section">
+                    <div class="section-title">
+                        <span class="section-icon"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4H6.5A2.5 2.5 0 0 0 4 6.5z"></path><path d="M4 6.5v13"></path></svg></span>
+                        <h3>Lesson information</h3>
+                    </div>
+
+                    <div class="form-grid">
+                        <div class="field-group">
+                            <label for="title_vi">Title (Vietnamese)</label>
+                            <input id="title_vi" class="form-control" name="title_vi" type="text" value="{{ lesson.title_vi }}">
+                        </div>
+
+                        <div class="field-group">
+                            <label for="title_en">Title (English)</label>
+                            <input id="title_en" class="form-control" name="title_en" type="text" value="{{ lesson.title_en }}">
+                        </div>
+
+                        <div class="field-group full-width">
+                            <label for="video_url">Link YouTube</label>
+                            <input id="video_url" class="form-control" name="video_url" type="text" value="{{ lesson.video_url or '' }}">
+                        </div>
+
+                        <div class="field-group full-width">
+                            <label for="vocabulary">Vocabulary</label>
+                            <textarea id="vocabulary" class="form-control" name="vocabulary" rows="2">{{ lesson.vocabulary or '' }}</textarea>
+                        </div>
+
+                        <div class="field-group full-width">
+                            <label for="dialogue">Dialogue content</label>
+                            <textarea id="dialogue" class="form-control" name="dialogue" rows="4">{{ lesson.dialogue or '' }}</textarea>
+                        </div>
+
+                        <div class="field-group">
+                            <label for="class_level">Class</label>
+                            <select id="class_level" class="form-control" name="class_level">
+                                <option value="6" {% if (lesson.class_level or '6') == '6' %}selected{% endif %}>Grade 6</option>
+                                <option value="7" {% if (lesson.class_level or '6') == '7' %}selected{% endif %}>Grade 7</option>
+                                <option value="8" {% if (lesson.class_level or '6') == '8' %}selected{% endif %}>Grade 8</option>
+                                <option value="9" {% if (lesson.class_level or '6') == '9' %}selected{% endif %}>Grade 9</option>
+                            </select>
+                        </div>
+
+                        <div class="field-group">
+                            <label for="week_number">Week</label>
+                            <input id="week_number" class="form-control" name="week_number" type="number" min="1" value="{{ lesson.week_number or 1 }}">
+                        </div>
+
+                        <div class="field-group">
+                            <label for="open_date">Open date</label>
+                            <input id="open_date" class="form-control" name="open_date" type="date" value="{{ lesson.open_date or '' }}">
+                        </div>
+
+                        <div class="field-group">
+                            <label for="close_date">Close date</label>
+                            <input id="close_date" class="form-control" name="close_date" type="date" min="{{ lesson.open_date or '' }}" value="{{ lesson.close_date or '' }}">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <div class="section-title">
+                        <span class="section-icon">💬</span>
+                        <h3>Practice</h3>
+                    </div>
+
+                    <div class="form-grid">
+                        <div class="field-group full-width">
+                            <label for="sample_question">Task 1: Exercise question</label>
+                            <textarea id="sample_question" class="form-control" name="sample_question" rows="3">{{ lesson.sample_question or '' }}</textarea>
+                        </div>
+
+                        <div class="field-group full-width">
+                            <label for="sentence_words">Task 2: Key words (comma separated)</label>
+                            <input id="sentence_words" class="form-control" name="sentence_words" type="text" value="{{ lesson.sentence_words or '' }}">
+                        </div>
+
+                        <div class="field-group full-width">
+                            <label for="task_3_text">Task 3: Record audio</label>
+                            <textarea id="task_3_text" class="form-control" name="task_3_text" rows="3">{{ lesson.task_3_text or 'Ghi âm lại giới thiệu về bản thân. (Tối đa file ghi âm là 1 phút)' }}</textarea>
+                        </div>
+
+                        <div class="field-group full-width">
+                            <label for="task_4_text">Task 4: Record video</label>
+                            <textarea id="task_4_text" class="form-control" name="task_4_text" rows="3">{{ lesson.task_4_text or 'Quay video ngắn cuộc hội thoại giới thiệu về người bạn mới. (Video có độ dài tối đa là 30 giây)' }}</textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section-actions">
+                    <button class="primary-btn" type="submit">Save changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <script>
+        const openDate = document.getElementById('open_date');
+        const closeDate = document.getElementById('close_date');
+        if (openDate && closeDate) {
+            const updateCloseMinimum = () => { closeDate.min = openDate.value || ''; };
+            openDate.addEventListener('change', updateCloseMinimum);
+            updateCloseMinimum();
+        }
+    </script>
+</body>
+</html>
