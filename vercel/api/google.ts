@@ -9,6 +9,7 @@ import {
   sendError,
   type AuthenticatedUser,
 } from "../lib/vercel-api";
+import { googleServiceAccountCredentials } from "../lib/google-credentials";
 
 const allowedSheets = new Set(["Student", "Lesson", "Practice"]);
 const practiceHeaders = [
@@ -18,18 +19,7 @@ const practiceHeaders = [
 ];
 
 function googleCredentials() {
-  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim();
-  if (!raw) throw new HttpError(503, "Google integration is not configured.");
-  let credentials: { client_email?: string; private_key?: string };
-  try {
-    credentials = JSON.parse(raw) as typeof credentials;
-  } catch {
-    throw new HttpError(503, "Google integration is not configured.");
-  }
-  if (!credentials.client_email || !credentials.private_key) {
-    throw new HttpError(503, "Google integration is not configured.");
-  }
-  return credentials;
+  return googleServiceAccountCredentials();
 }
 
 function sheetsClient() {

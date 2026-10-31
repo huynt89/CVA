@@ -8,19 +8,10 @@ import {
   requirePost,
   sendError,
 } from "../lib/vercel-api";
+import { googleServiceAccountCredentials } from "../lib/google-credentials";
 
 function driveClient() {
-  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim();
-  if (!raw) throw new HttpError(503, "Google Drive is not configured.");
-  let credentials: { client_email?: string; private_key?: string };
-  try {
-    credentials = JSON.parse(raw) as typeof credentials;
-  } catch {
-    throw new HttpError(503, "Google Drive is not configured.");
-  }
-  if (!credentials.client_email || !credentials.private_key) {
-    throw new HttpError(503, "Google Drive is not configured.");
-  }
+  const credentials = googleServiceAccountCredentials();
   const auth = new googleApis.auth.JWT({
     email: credentials.client_email,
     key: credentials.private_key,

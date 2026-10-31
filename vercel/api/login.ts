@@ -2,6 +2,7 @@ import { createHash, scryptSync, timingSafeEqual } from "node:crypto";
 import { google as googleApis } from "googleapis";
 import type { VercelRequest, VercelResponse } from "../lib/vercel-types";
 import { createSessionToken, HttpError, requirePost, sendError } from "../lib/vercel-api";
+import { googleServiceAccountCredentials } from "../lib/google-credentials";
 
 type UserRecord = {
   email?: string;
@@ -48,24 +49,9 @@ function validPassword(password: string, encoded: string) {
 }
 
 async function findUser(identifier: string, requestedRole: string): Promise<UserRecord | undefined> {
-  const rawCredentials = process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim();
   const spreadsheetId = process.env.GOOGLE_SHEET_ID?.trim();
-  if (!rawCredentials) {
-    throw new HttpError(503, "GOOGLE_SERVICE_ACCOUNT_JSON is not configured.");
-  }
   if (!spreadsheetId) throw new HttpError(503, "GOOGLE_SHEET_ID is not configured.");
-  let credentials: { client_email?: string; private_key?: string };
-  try {
-    credentials = JSON.parse(rawCredentials) as typeof credentials;
-  } catch {
-    throw new HttpError(503, "GOOGLE_SERVICE_ACCOUNT_JSON must contain valid JSON.");
-  }
-  if (!credentials.client_email || !credentials.private_key) {
-    throw new HttpError(
-      503,
-      "GOOGLE_SERVICE_ACCOUNT_JSON must include client_email and private_key.",
-    );
-  }
+  const credentials = googleServiceAccountCredentials();
   const auth = new googleApis.auth.JWT({
     email: credentials.client_email,
     key: credentials.private_key,

@@ -8,6 +8,7 @@ import {
   sendError,
 } from "../lib/vercel-api";
 import { google as googleApis } from "googleapis";
+import { googleServiceAccountCredentials } from "../lib/google-credentials";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!requirePost(req, res)) return;
@@ -20,12 +21,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!fileId || fileId.length > 256 || /[\\/\r\n]/.test(audioName)) {
       throw new HttpError(400, "The audio file reference is invalid.");
     }
-    const rawCredentials = process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim();
-    if (!rawCredentials) throw new HttpError(503, "Google Drive is not configured.");
-    const credentials = JSON.parse(rawCredentials) as { client_email?: string; private_key?: string };
-    if (!credentials.client_email || !credentials.private_key) {
-      throw new HttpError(503, "Google Drive is not configured.");
-    }
+    const credentials = googleServiceAccountCredentials();
     const auth = new googleApis.auth.JWT({
       email: credentials.client_email,
       key: credentials.private_key,
