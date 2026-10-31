@@ -35,8 +35,8 @@ hiện.
    `username`.
 
    Mỗi tài khoản học sinh và giáo viên cần có một dòng. `role` là `student`
-   hoặc `teacher`; `status` là `active` hoặc `locked`. Email/role phải khớp hồ sơ
-   trong SQLite.
+   hoặc `teacher`; `status` là `active` hoặc `locked`. Sau khi xác thực từ Sheet,
+   ứng dụng tự tạo hồ sơ SQLite cục bộ nếu chưa có.
 3. Với từng tài khoản, tạo hash trên máy tin cậy:
 
    ```powershell
@@ -136,7 +136,7 @@ repo public. Bản phát hành gồm `CVA-Launcher.exe`, ZIP ứng dụng,
 ## 6. Kiểm tra trước khi phân phối
 
 1. Đăng nhập trên ứng dụng Windows bằng một tài khoản giáo viên và một tài
-   khoản học sinh có trong `Users` và SQLite.
+   khoản học sinh có trong tab `Student`.
 2. Kiểm tra giáo viên đọc/ghi `Student`, `Lesson`, `Practice`; xác nhận học
    sinh không thể gọi thao tác dành riêng giáo viên.
 3. Thử gửi Practice, tải audio/video nhỏ lên Drive, xác nhận link được trả về

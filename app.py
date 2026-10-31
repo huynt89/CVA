@@ -2766,23 +2766,50 @@ def login():
 
             conn = get_db()
             user = conn.execute(
-                'SELECT * FROM users WHERE lower(email) = ? AND role = ? LIMIT 1',
-                (account_email, role),
+                'SELECT * FROM users WHERE lower(email) = ? LIMIT 1',
+                (account_email,),
             ).fetchone()
             if not user:
-                conn.close()
-                return render_template(
-                    'login.html',
-                    is_frozen=True,
-                    error='No matching student or teacher profile exists in the local school records.',
-                ), 403
-            if user['is_active'] == 0:
-                conn.close()
-                return render_template(
-                    'login.html',
-                    is_frozen=True,
-                    error='This account is disabled. Contact your teacher.',
-                ), 403
+                account_username = (
+                    str((login_result or {}).get('username') or raw_input).strip()
+                )
+                account_name = (
+                    str((login_result or {}).get('full_name') or account_username).strip()
+                )
+                account_class = str((login_result or {}).get('class_name') or '').strip()
+                local_username = choose_unique_username(
+                    conn,
+                    account_username or account_name,
+                    account_email,
+                )
+                conn.execute(
+                    'INSERT INTO users (full_name, username, email, password, role, class_name, is_active, total_points, average_score) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    (
+                        account_name or account_email,
+                        local_username,
+                        account_email,
+                        secrets.token_urlsafe(32),
+                        role,
+                        account_class,
+                        1,
+                        0,
+                        0,
+                    ),
+                )
+                user = conn.execute(
+                    'SELECT * FROM users WHERE lower(email) = ? LIMIT 1',
+                    (account_email,),
+                ).fetchone()
+            elif user['role'] != role or user['is_active'] == 0:
+                conn.execute(
+                    'UPDATE users SET role = ?, is_active = 1 WHERE id = ?',
+                    (role, user['id']),
+                )
+                user = conn.execute(
+                    'SELECT * FROM users WHERE id = ?',
+                    (user['id'],),
+                ).fetchone()
+            conn.commit()
             conn.close()
             if not save_cloud_token(user['id'], access_token):
                 return render_template(

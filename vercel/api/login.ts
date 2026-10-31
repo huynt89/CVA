@@ -6,6 +6,8 @@ import { createSessionToken, HttpError, requirePost, sendError } from "../lib/ve
 type UserRecord = {
   email?: string;
   username?: string;
+  full_name?: string;
+  class_name?: string;
   password?: string;
   password_hash?: string;
   role?: string;
@@ -75,6 +77,8 @@ async function findUser(identifier: string, requestedRole: string): Promise<User
   const headers = values[0].map((value) => String(value ?? "").trim().toLowerCase());
   const emailIndex = headers.indexOf("email");
   const usernameIndex = headers.indexOf("username");
+  const fullNameIndex = headers.indexOf("full_name");
+  const classNameIndex = headers.indexOf("class_name");
   const passwordIndex = headers.indexOf("password_hash") >= 0
     ? headers.indexOf("password_hash")
     : headers.indexOf("password");
@@ -100,6 +104,8 @@ async function findUser(identifier: string, requestedRole: string): Promise<User
   return {
     email: String(row[emailIndex] ?? ""),
     username: String(row[usernameIndex] ?? ""),
+    full_name: fullNameIndex >= 0 ? String(row[fullNameIndex] ?? "") : "",
+    class_name: classNameIndex >= 0 ? String(row[classNameIndex] ?? "") : "",
     password_hash: String(row[passwordIndex] ?? ""),
     role: String(row[roleIndex] ?? "").trim().toLowerCase(),
     is_active: activeIndex >= 0
@@ -156,6 +162,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       uid: normalizedUser.id,
       email: normalizedUser.email,
       role: normalizedUser.role,
+      username: user.username ?? "",
+      full_name: user.full_name ?? "",
+      class_name: user.class_name ?? "",
       access_token: accessToken,
       expires_in: 14_400,
     });

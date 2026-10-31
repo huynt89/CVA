@@ -9,8 +9,9 @@ khoản và mật khẩu dạng hash. Không đưa API key vào ứng dụng Win
 2. Ứng dụng gửi thông tin đăng nhập đến `/api/login` trên Vercel qua HTTPS.
    Vercel đọc tab `Student`, tìm username/email, kiểm tra scrypt hash, role và
    trạng thái.
-3. Vercel cấp JWT ký bằng `APP_SESSION_SECRET`, sống trong 4 giờ. Ứng dụng giữ
-   token trong SQLite cục bộ và dùng token khi gọi API Google/AI.
+3. Nếu đăng nhập thành công, Vercel cấp JWT ký bằng `APP_SESSION_SECRET`, sống
+   trong 4 giờ. Ứng dụng tự tạo/cập nhật hồ sơ SQLite cục bộ để gắn dữ liệu học
+   tập với email và role trên Sheet, rồi giữ token trong SQLite để gọi API.
 4. Vercel gọi Gemini, Groq, Google Sheets và Google Drive bằng credentials chỉ
    lưu trong Environment Variables.
 5. File audio/video được ứng dụng chuyển đến phiên resumable upload trên Google
@@ -37,7 +38,9 @@ full_name | username | email | password | role | class_name | status
 - `role` dùng `student` hoặc `teacher`. Dòng giáo viên bạn đã thêm sẽ được giữ
   lại khi ứng dụng đồng bộ danh sách Student.
 - `status` dùng `active` để cho phép đăng nhập, hoặc `locked` để khóa.
-- Email và role của mỗi dòng phải trùng với hồ sơ tài khoản cục bộ trong app.
+- Vercel xác thực trực tiếp từ `Student`; lần đăng nhập thành công đầu tiên sẽ
+  tự tạo hồ sơ cục bộ theo email, username, tên, lớp và role từ Sheet. Không
+  cần tạo trước cùng một hồ sơ trong SQLite.
 - Khi đồng bộ sheet, ứng dụng giữ lại hash mật khẩu và các dòng giáo viên.
 
 ### Tạo mật khẩu hash
@@ -65,9 +68,10 @@ hay mật khẩu vào GitHub.
    desktop Python làm Function.
 5. Trong **Settings → Build and Deployment**, đặt **Framework Preset** thành
    **Other** (không để Flask/Python), và xác nhận **Root Directory** là `vercel`.
-   Tắt **Override** cho Build Command hoặc xóa giá trị Build Command để Vercel
-   tự phát hiện và đóng gói `api/*.ts`. Không nhập `npm run typecheck` làm Build
-   Command: lệnh đó chỉ kiểm tra kiểu và không tạo deployment output.
+   File `vercel/vercel.json` đã đặt `framework: null` và `buildCommand: null`
+   để buộc Vercel dùng chế độ Other và không chạy custom build command.
+   Không đặt `npm run typecheck` làm Build Command: lệnh đó chỉ kiểm tra kiểu,
+   không tạo deployment output.
    Để Install Command mặc định (npm install) và Output Directory trống. Không
    cần `.vercelignore` trong `vercel/`, vì thư mục này đã là riêng biệt và
    không chứa ứng dụng desktop `app.py`.
@@ -127,8 +131,8 @@ Sau khi deploy, sao chép domain production dạng
 
 ## E. Kiểm tra đăng nhập và API
 
-1. Đảm bảo tài khoản có cùng username, email và role trong tab `Student` và
-   dữ liệu tài khoản cục bộ của ứng dụng.
+1. Đảm bảo tài khoản có username, email, password hash, role và trạng thái
+   `active` trong tab `Student`.
 2. Mở ứng dụng desktop và đăng nhập. Tài khoản không tồn tại, sai mật khẩu,
    role không khớp hoặc có trạng thái `locked` phải bị từ chối.
 3. Giáo viên thử đọc/ghi các sheet `Student`, `Lesson`, `Practice`; học sinh
@@ -158,15 +162,16 @@ Sau khi deploy, sao chép domain production dạng
   có Function route đó. Xác nhận build mới thành công và Build Logs liệt kê
   `api/login.ts` như Function. Nếu Build Logs cảnh báo
   `Build output contains no "functions", "static", or "services" directory`,
-  kiểm tra **Build Command**: xóa command `npm run build` hoặc
-  `npm run typecheck` và tắt Override. Các lệnh TypeScript này chỉ type-check,
-  không tạo output; Vercel cần tự phát hiện/đóng gói các file trong `api/`.
+  đẩy phiên bản mới có `buildCommand: null` trong `vercel/vercel.json` lên repo
+  rồi tạo deployment mới. Không chạy `npm run build` hoặc `npm run typecheck`
+  làm Build Command: các lệnh này không tạo deployment output. Vercel cần tự
+  phát hiện/đóng gói các file trong `api/`.
   Kiểm tra URL deployment trực tiếp của build mới;
   nếu URL đó chạy nhưng `cva-liard.vercel.app` vẫn 404, gán/promote deployment
   thành **Production** để domain production trỏ đúng deployment. Không cần
   `.vercelignore` trong thư mục `vercel/`.
 - **Đăng nhập bị từ chối:** kiểm tra username/email, scrypt hash trong cột
-  `password`, role, `active` trong status và hồ sơ email/role cục bộ.
+  `password`, role và trạng thái `active` trong tab `Student`.
 - **Vercel trả 503:** kiểm tra tên các Environment Variables và redeploy.
 - **Google trả 403:** xác nhận Sheets/Drive API đã bật và service account có
   quyền Editor trên Sheet/folder; kiểm tra Sheet ID và Drive folder ID.
