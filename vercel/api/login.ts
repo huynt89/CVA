@@ -50,17 +50,21 @@ function validPassword(password: string, encoded: string) {
 async function findUser(identifier: string, requestedRole: string): Promise<UserRecord | undefined> {
   const rawCredentials = process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim();
   const spreadsheetId = process.env.GOOGLE_SHEET_ID?.trim();
-  if (!rawCredentials || !spreadsheetId) {
-    throw new HttpError(503, "The sign-in service is not configured.");
+  if (!rawCredentials) {
+    throw new HttpError(503, "GOOGLE_SERVICE_ACCOUNT_JSON is not configured.");
   }
+  if (!spreadsheetId) throw new HttpError(503, "GOOGLE_SHEET_ID is not configured.");
   let credentials: { client_email?: string; private_key?: string };
   try {
     credentials = JSON.parse(rawCredentials) as typeof credentials;
   } catch {
-    throw new HttpError(503, "The sign-in service is not configured.");
+    throw new HttpError(503, "GOOGLE_SERVICE_ACCOUNT_JSON must contain valid JSON.");
   }
   if (!credentials.client_email || !credentials.private_key) {
-    throw new HttpError(503, "The sign-in service is not configured.");
+    throw new HttpError(
+      503,
+      "GOOGLE_SERVICE_ACCOUNT_JSON must include client_email and private_key.",
+    );
   }
   const auth = new googleApis.auth.JWT({
     email: credentials.client_email,
