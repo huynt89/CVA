@@ -35,6 +35,9 @@
                 {% if error %}
                     <div class="alert-box" role="alert">{{ error }}</div>
                 {% endif %}
+                {% if is_frozen and not show_register and not warning %}
+                    <div class="alert-box" role="status">New accounts are managed by your teacher in the Student sheet.</div>
+                {% endif %}
 
                 {% if not show_register %}
                     <form method="POST" action="{{ url_for('login') }}">
@@ -52,7 +55,9 @@
 
                         <div class="login-actions">
                             <button class="primary-btn login-submit-btn" type="submit" data-student="{{ t('student_login') }}" data-teacher="{{ t('teacher_login') }}">{{ t('student_login') }}</button>
-                            <a class="secondary-btn" id="registerLink" href="{{ url_for('register') }}">{{ t('register') }}</a>
+                            {% if not is_frozen %}
+                                <a class="secondary-btn" id="registerLink" href="{{ url_for('register') }}">{{ t('register') }}</a>
+                            {% endif %}
                         </div>
                     </form>
                 {% else %}

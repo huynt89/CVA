@@ -100,6 +100,18 @@ class AppFeatureTests(unittest.TestCase):
         conn.close()
         self.assertEqual(student['role'], 'student')
 
+    def test_frozen_registration_is_hidden_and_explains_sheet_managed_accounts(self):
+        with patch.object(app_module, 'IS_FROZEN', True):
+            with app_module.app.test_client() as client:
+                login_page = client.get('/login')
+                self.assertEqual(login_page.status_code, 200)
+                self.assertNotIn(b'id="registerLink"', login_page.data)
+                self.assertIn(b'New accounts are managed by your teacher in the Student sheet.', login_page.data)
+
+                registration_page = client.get('/register')
+                self.assertEqual(registration_page.status_code, 403)
+                self.assertIn(b'New accounts are managed by your teacher in the Student sheet.', registration_page.data)
+
     def test_two_configured_teacher_accounts_exist_and_can_log_in(self):
         conn = app_module.get_db()
         teacher_rows = conn.execute(
@@ -1555,6 +1567,52 @@ class AppFeatureTests(unittest.TestCase):
 
         tokens = app_module.get_cloud_tokens(user_id)
         self.assertEqual(tokens, {'access_token': 'signed-vercel-session'})
+
+    def test_vercel_sign_in_creates_local_profile_for_sheet_account(self):
+        remote_account = {
+            'authenticated': True,
+            'uid': 'sheetstudent@example.com',
+            'email': 'sheetstudent@example.com',
+            'role': 'student',
+            'username': 'sheetstudent',
+            'full_name': 'Sheet Student',
+            'class_name': '7A',
+            'access_token': 'signed-vercel-session',
+        }
+        with patch.object(app_module, 'IS_FROZEN', True), patch.object(
+            app_module,
+            'call_vercel_api',
+            return_value=remote_account,
+        ):
+            with app_module.app.test_client() as client:
+                response = client.post(
+                    '/login',
+                    data={
+                        'username': 'sheetstudent',
+                        'password': 'remote-password',
+                        'role': 'student',
+                    },
+                )
+                self.assertEqual(response.status_code, 302)
+                with client.session_transaction() as browser_session:
+                    self.assertEqual(browser_session['user_role'], 'student')
+
+        conn = app_module.get_db()
+        user = conn.execute(
+            'SELECT * FROM users WHERE email = ?',
+            ('sheetstudent@example.com',),
+        ).fetchone()
+        conn.close()
+        self.assertIsNotNone(user)
+        self.assertEqual(user['username'], 'sheetstudent')
+        self.assertEqual(user['full_name'], 'Sheet Student')
+        self.assertEqual(user['class_name'], '7A')
+        self.assertEqual(user['is_active'], 1)
+        self.assertNotEqual(user['password'], 'remote-password')
+        self.assertEqual(
+            app_module.get_cloud_tokens(user['id']),
+            {'access_token': 'signed-vercel-session'},
+        )
 
     def test_login_form_accepts_username_and_password(self):
         with app_module.app.test_client() as client:

@@ -59,35 +59,30 @@ hiện.
    Không chọn thư mục gốc repo vì ở đó có `app.py` của ứng dụng desktop.
    Nếu project trước đây dùng Flask/Python, phải đổi preset và xóa các lệnh
    Build/Install riêng cho Python; để Output Directory trống. Không cần
-   `.vercelignore` bên trong `vercel/`.
+   `.vercelignore` bên trong `vercel/`. Xóa `.vercelignore` cũ ở repository
+   root nếu còn, vì allowlist cũ có thể loại `vercel/api/` khỏi deployment.
 3. Sau khi deploy, xác nhận `api/login.ts` xuất hiện trong danh sách Functions.
    Đảm bảo deployment mới được đặt Production nếu ứng dụng gọi production
    domain; Preview deployment không tự chuyển production alias.
-4. Mở **Settings → Environment Variables** và tạo các biến cho **Production**:
-
-   | Tên biến | Giá trị |
-   |---|---|
-   | `APP_SESSION_SECRET` | Chuỗi ngẫu nhiên bí mật dài tối thiểu 32 ký tự |
-   | `GEMINI_API_KEY` | Gemini API key |
-   | `GROQ_API_KEY` | Groq API key |
-   | `GROQ_EVAL_MODEL` | (Tùy chọn) Model Groq chấm điểm; mặc định `llama-3.3-70b-versatile` |
-   | `GOOGLE_SERVICE_ACCOUNT_JSON` | Toàn bộ nội dung JSON service account |
-   | `GOOGLE_SHEET_ID` | ID Google Spreadsheet |
-   | `GOOGLE_DRIVE_FOLDER_ID` | ID thư mục Drive dùng lưu bài nộp |
-
-5. Đặt các biến là **Sensitive/Secret** nếu Vercel hiển thị lựa chọn đó. Không
-   đưa chúng vào GitHub Actions, `static/js/cloud-config.json`, EXE, chat hoặc
-   log.
-6. Tạo `APP_SESSION_SECRET` bằng bộ tạo mật khẩu của hệ điều hành hoặc lệnh
-   Python sau; chỉ lưu kết quả trong Vercel, không commit:
+4. Tạo tệp import dành riêng cho Vercel. Trước đó, cập nhật các API key đã từng
+   bị chia sẻ và xác nhận `.env` có `GOOGLE_SERVICE_ACCOUNT_PATH` trỏ đến JSON
+   service account:
 
    ```powershell
-   py -c "import secrets; print(secrets.token_urlsafe(48))"
+   .\.venv\Scripts\python.exe tools\prepare_vercel_env.py
    ```
 
-7. Với `GOOGLE_SERVICE_ACCOUNT_JSON`, sao chép nguyên nội dung `{ ... }` vào
-   value. Không commit file JSON.
-8. Lưu biến, deploy project rồi mở **Settings → Domains** để lấy URL production,
+   Nếu `.env` chưa có `GOOGLE_SHEET_ID` hoặc `GOOGLE_DRIVE_FOLDER_ID`, nhập ID
+   tương ứng khi được hỏi. Script tạo `.env.vercel` gồm các biến server cần
+   thiết và `GOOGLE_SERVICE_ACCOUNT_JSON_B64` (Base64 không phải mã hóa bảo
+   mật); không đưa đường dẫn máy tính vào file. Không mở/dán nội dung file vào
+   chat.
+5. Mở **Settings → Environment Variables** của đúng Vercel project, dùng chức
+   năng import để tải `.env.vercel` lên và gán biến cho **Production**.
+   Đặt biến là **Sensitive/Secret** nếu Vercel hiển thị lựa chọn đó. Không đưa
+   chúng vào GitHub Actions, `static/js/cloud-config.json`, EXE, chat hoặc log.
+6. Sau khi lưu biến, redeploy Production để Function nhận cấu hình mới.
+7. Mở **Settings → Domains** để lấy URL production,
    ví dụ `https://cva-api-yourname.vercel.app`.
 
 ## 4. Cấu hình URL Vercel trong ứng dụng

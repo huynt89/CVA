@@ -2869,7 +2869,11 @@ def login():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if IS_FROZEN:
-        return redirect(url_for('login'))
+        return render_template(
+            'login.html',
+            is_frozen=True,
+            warning='New accounts are managed by your teacher in the Student sheet.',
+        ), 403
     if request.method == 'POST':
         role = (request.form.get('role') or 'student').strip().lower()
         if role != 'student':

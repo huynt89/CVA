@@ -18,6 +18,11 @@ type UserRecord = {
 
 const attempts = new Map<string, { windowStartedAt: number; count: number }>();
 
+function rejectLogin(reason: string): never {
+  console.warn(`Sign-in rejected (${reason}).`);
+  throw new HttpError(401, "Username, password, or account role is incorrect.");
+}
+
 function checkLoginLimit(key: string) {
   const now = Date.now();
   const record = attempts.get(key);
@@ -69,40 +74,41 @@ async function findUser(identifier: string, requestedRole: string): Promise<User
   const usernameIndex = headers.indexOf("username");
   const fullNameIndex = headers.indexOf("full_name");
   const classNameIndex = headers.indexOf("class_name");
-  const passwordIndex = headers.indexOf("password_hash") >= 0
-    ? headers.indexOf("password_hash")
-    : headers.indexOf("password");
+  const passwordHashIndex = headers.indexOf("password_hash");
+  const passwordIndex = headers.indexOf("password");
   const roleIndex = headers.indexOf("role");
   const activeIndex = headers.indexOf("is_active");
   const statusIndex = headers.indexOf("status");
-  if ([emailIndex, passwordIndex, roleIndex].some((index) => index < 0) || usernameIndex < 0) {
+  if ([emailIndex, roleIndex].some((index) => index < 0) || usernameIndex < 0) {
+    throw new HttpError(503, "The Student worksheet must contain username, email, and role columns.");
+  }
+  if (passwordHashIndex < 0 && passwordIndex < 0) {
     throw new HttpError(503, "The Student worksheet must contain username, email, password, and role columns.");
   }
 
   const matchingRows = values.slice(1).filter((cells) => {
-    const rowRole = String(cells[roleIndex] ?? "").trim().toLowerCase();
     const rowUsername = String(cells[usernameIndex] ?? "").trim().toLowerCase();
     const rowEmail = String(cells[emailIndex] ?? "").trim().toLowerCase();
-    return rowRole === requestedRole && (rowUsername === identifier || rowEmail === identifier);
+    return rowUsername === identifier || rowEmail === identifier;
   });
   if (matchingRows.length > 1) {
     throw new HttpError(409, "More than one account matches this username. Contact your teacher.");
   }
   const row = matchingRows[0];
   if (!row) return undefined;
-  const status = statusIndex >= 0 ? String(row[statusIndex] ?? "") : "";
+  const passwordHash = passwordHashIndex >= 0 ? String(row[passwordHashIndex] ?? "").trim() : "";
+  const password = passwordIndex >= 0 ? String(row[passwordIndex] ?? "").trim() : "";
+  const active = activeIndex >= 0 ? String(row[activeIndex] ?? "").trim() : "";
+  const status = statusIndex >= 0 ? String(row[statusIndex] ?? "").trim() : "";
   return {
     email: String(row[emailIndex] ?? ""),
     username: String(row[usernameIndex] ?? ""),
     full_name: fullNameIndex >= 0 ? String(row[fullNameIndex] ?? "") : "",
     class_name: classNameIndex >= 0 ? String(row[classNameIndex] ?? "") : "",
-    password_hash: String(row[passwordIndex] ?? ""),
+    password_hash: passwordHash,
+    password,
     role: String(row[roleIndex] ?? "").trim().toLowerCase(),
-    is_active: activeIndex >= 0
-      ? String(row[activeIndex] ?? "").trim().toLowerCase()
-      : statusIndex >= 0
-        ? status.trim().toLowerCase()
-        : "true",
+    is_active: (active || status || "true").toLowerCase(),
   };
 }
 
@@ -130,18 +136,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const address = Array.isArray(forwarded) ? forwarded[0] : forwarded;
     checkLoginLimit(createHash("sha256").update(String(address ?? "unknown")).digest("hex"));
     const user = await findUser(identifier, requestedRole);
+    if (!user) rejectLogin("account_not_found");
     const role: "teacher" | "student" | null =
       user?.role === "teacher" || user?.role === "student" ? user.role : null;
+    if (!role || role !== requestedRole) rejectLogin("account_role_mismatch");
     const email = String(user?.email ?? "").trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) rejectLogin("account_email_invalid");
+    if (!["true", "1", "yes", "active"].includes(String(user.is_active ?? "").toLowerCase())) {
+      rejectLogin("account_inactive");
+    }
     if (
-      !user
-      || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-      || !["true", "1", "yes", "active"].includes(String(user.is_active ?? "").toLowerCase())
-      || !role
-      || role !== requestedRole
-      || !validPassword(password, user.password_hash ?? "")
+      ![user.password_hash, user.password].some((candidate) =>
+        candidate ? validPassword(password, candidate) : false,
+      )
     ) {
-      throw new HttpError(401, "Username, password, or account role is incorrect.");
+      rejectLogin("password_mismatch_or_hash_invalid");
     }
 
     const normalizedUser = { id: email, email, role };

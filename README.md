@@ -30,11 +30,13 @@ URL Vercel công khai, không chứa API key.
 - **Google Sheet `Student`** giữ tài khoản học sinh và giáo viên. Cần có cột
   `username`, `email`, `password`, `role`, `status`; cột `password` lưu scrypt
   hash, không lưu mật khẩu dạng rõ. Chạy `tools/generate_password_hash.py` để
-  tạo hash scrypt.
+  tạo hash scrypt. Bản Windows đóng gói không tự đăng ký tài khoản; giáo viên
+  thêm tài khoản vào Sheet `Student`, sau đó học sinh đăng nhập bằng tài khoản đó.
 - **Ứng dụng Windows** giữ dữ liệu nghiệp vụ cục bộ trong SQLite. Khi đăng nhập,
-  Vercel tra username hoặc email trong `Student`, sau đó ứng dụng đối chiếu
-  email và role với hồ sơ cục bộ. Đồng bộ danh sách không xóa cột mật khẩu hash
-  hay dòng giáo viên.
+  Vercel tra username/email, hash mật khẩu, role và trạng thái trong `Student`.
+  Ứng dụng tự tạo/cập nhật hồ sơ SQLite cục bộ từ tài khoản đã xác thực để lưu
+  dữ liệu học tập; thông tin đăng nhập được quyết định bởi Sheet. Đồng bộ danh
+  sách không xóa cột mật khẩu hash hay dòng giáo viên.
 - **Media** được tải trực tiếp từ Flask lên phiên tải lên resumable của Google
   Drive do Vercel cấp. Vercel chỉ lưu secret, xác nhận chủ sở hữu file, đặt
   quyền xem cho liên kết Drive và xử lý transcription.
@@ -98,6 +100,8 @@ Chạy Python tests:
 Kiểm tra Vercel API:
 
 ```powershell
+Push-Location .\vercel
 npm ci
-npm run build
+npm run typecheck
+Pop-Location
 ```

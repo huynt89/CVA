@@ -38,6 +38,9 @@ full_name | username | email | password | role | class_name | status
 - `role` dùng `student` hoặc `teacher`. Dòng giáo viên bạn đã thêm sẽ được giữ
   lại khi ứng dụng đồng bộ danh sách Student.
 - `status` dùng `active` để cho phép đăng nhập, hoặc `locked` để khóa.
+- Bản Windows đóng gói không bật tự đăng ký. Giáo viên/quản trị viên thêm
+  tài khoản mới trực tiếp vào tab `Student`, gồm username, email, hash scrypt,
+  role, lớp và trạng thái `active`.
 - Vercel xác thực trực tiếp từ `Student`; lần đăng nhập thành công đầu tiên sẽ
   tự tạo hồ sơ cục bộ theo email, username, tên, lớp và role từ Sheet. Không
   cần tạo trước cùng một hồ sơ trong SQLite.
@@ -70,12 +73,19 @@ hay mật khẩu vào GitHub.
    **Other** (không để Flask/Python), và xác nhận **Root Directory** là `vercel`.
    File `vercel/vercel.json` đã đặt `framework: null` và `buildCommand: null`
    để buộc Vercel dùng chế độ Other và không chạy custom build command.
+   Cấu hình function áp dụng chung cho các file `api/*.ts`; vì vậy không cần
+   khai báo đường dẫn riêng cho `api/transcribe.ts`.
    Không đặt `npm run typecheck` làm Build Command: lệnh đó chỉ kiểm tra kiểu,
    không tạo deployment output.
    Để Install Command mặc định (npm install) và Output Directory trống. Không
    cần `.vercelignore` trong `vercel/`, vì thư mục này đã là riêng biệt và
    không chứa ứng dụng desktop `app.py`.
-6. Sau khi push thay đổi, tạo deployment mới từ commit đó. Nếu domain
+6. **Xóa `.vercelignore` ở repository root** nếu repo còn file này. Bản cũ dùng
+   allowlist `api/`, `lib/`, `package.json` ở root và sẽ loại các file thật nằm
+   dưới `vercel/api/`; log kiểu `Found .vercelignore (repository root)` và
+   `Removed ... ignored files` xác nhận file này đang ảnh hưởng deployment.
+   Commit/push việc xóa file trước khi deploy lại.
+7. Sau khi push thay đổi, tạo deployment mới từ commit đó. Nếu domain
    `cva-liard.vercel.app` là production domain, phải promote deployment mới lên
    **Production** (hoặc deploy nhánh Production Branch), không chỉ redeploy một
    Preview deployment. Build Logs phải cài dependency Node/npm và deployment
@@ -83,8 +93,29 @@ hay mật khẩu vào GitHub.
 
 ## C. Đặt Environment Variables
 
-Mở Vercel project → **Settings → Environment Variables**. Thêm các biến cho
-Production (thêm Preview chỉ khi thật sự cần dùng tài khoản/dữ liệu thử):
+Tạo một tệp chỉ dành cho Vercel từ cấu hình local. Trước tiên, cập nhật key
+Gemini/Groq trong `.env` nếu key cũ từng được chia sẻ; không tải nguyên `.env`
+local lên Vercel vì tệp đó có thể chứa đường dẫn máy tính và biến chỉ dùng cho
+desktop.
+
+Chạy tại thư mục gốc repo bằng PowerShell:
+
+```powershell
+.\.venv\Scripts\python.exe tools\prepare_vercel_env.py
+```
+
+Nếu thiếu `GOOGLE_SHEET_ID` hoặc `GOOGLE_DRIVE_FOLDER_ID`, công cụ sẽ hỏi giá
+trị tương ứng. Dùng ID từ URL (công cụ cũng chấp nhận URL Google Sheet/Drive).
+Nó đọc service-account JSON qua `GOOGLE_SERVICE_ACCOUNT_PATH` trong `.env`,
+hoặc hỏi đường dẫn nếu biến đó chưa có. Credentials được encode Base64 thành
+một dòng để tránh lỗi xuống dòng; Base64 không phải mã hóa bảo mật, vì vậy hãy
+bảo vệ `.env.vercel` như một secret. Giá trị không được in ra màn hình. Tệp
+`.env.vercel` được loại khỏi Git theo `.gitignore`.
+
+Trong Vercel project → **Settings → Environment Variables**, dùng chức năng
+nhập hàng loạt để tải `.env.vercel` lên hoặc dán nội dung tệp. Chọn môi trường
+**Production** cho các biến (thêm Preview chỉ khi thật sự cần dùng tài khoản/
+dữ liệu thử):
 
 | Tên biến | Nội dung |
 |---|---|
@@ -92,24 +123,14 @@ Production (thêm Preview chỉ khi thật sự cần dùng tài khoản/dữ li
 | `GEMINI_API_KEY` | Gemini API key |
 | `GROQ_API_KEY` | Groq API key |
 | `GROQ_EVAL_MODEL` | (Tùy chọn) Model Groq chấm điểm; mặc định `llama-3.3-70b-versatile` |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | Toàn bộ JSON service account |
+| `GOOGLE_SERVICE_ACCOUNT_JSON_B64` | JSON service account được encode Base64 |
 | `GOOGLE_SHEET_ID` | ID Google Spreadsheet |
 | `GOOGLE_DRIVE_FOLDER_ID` | ID thư mục Drive lưu bài nộp |
 
-Tạo secret phiên bằng PowerShell với Python cài trên máy:
-
-```powershell
-py -c "import secrets; print(secrets.token_urlsafe(48))"
-```
-
-Chỉ dán output vào Environment Variable `APP_SESSION_SECRET`. Không commit,
-không gửi qua chat và không đưa vào `cloud-config.json`.
-
-Với `GOOGLE_SERVICE_ACCOUNT_JSON`, mở file JSON cục bộ, sao chép toàn bộ nội
-dung `{ ... }` vào Vercel. Không upload file JSON lên GitHub. Chia sẻ Google
-Spreadsheet và thư mục Drive cho `client_email` trong JSON, cấp quyền Editor.
-Google Sheets API và Google Drive API cần bật cho project Google Cloud thuộc
-service account.
+Kiểm tra tất cả biến được gán cho **Production**. Không tải file service
+account JSON riêng lên GitHub. Chia sẻ Google Spreadsheet và thư mục Drive
+cho `client_email` trong service-account JSON, cấp quyền Editor; Google Sheets
+API và Google Drive API phải được bật trong Google Cloud.
 
 Lưu biến, rồi **Redeploy** để deployment nhận các giá trị mới. Nếu secret từng
 bị lộ, tạo secret/API key mới ở nhà cung cấp và cập nhật Vercel; chỉ xóa key
@@ -161,6 +182,11 @@ Sau khi deploy, sao chép domain production dạng
 - **`/api/login` trả HTTP 404 `NOT_FOUND`:** deployment/domain hiện tại không
   có Function route đó. Xác nhận build mới thành công và Build Logs liệt kê
   `api/login.ts` như Function. Nếu Build Logs cảnh báo
+  `Found .vercelignore (repository root)` cùng `Removed ... ignored files`,
+  mở repo GitHub và xóa `.vercelignore` ở cùng cấp với `app.py`, commit/push
+  thay đổi đó, rồi tạo deployment mới. Không thay bằng allowlist root cũ:
+  Vercel cần đọc `vercel/api/login.ts` khi Root Directory là `vercel`.
+  Nếu vẫn cảnh báo
   `Build output contains no "functions", "static", or "services" directory`,
   đẩy phiên bản mới có `buildCommand: null` trong `vercel/vercel.json` lên repo
   rồi tạo deployment mới. Không chạy `npm run build` hoặc `npm run typecheck`
@@ -170,8 +196,27 @@ Sau khi deploy, sao chép domain production dạng
   nếu URL đó chạy nhưng `cva-liard.vercel.app` vẫn 404, gán/promote deployment
   thành **Production** để domain production trỏ đúng deployment. Không cần
   `.vercelignore` trong thư mục `vercel/`.
+- **Build báo `[unused_function]` cho `api/transcribe.ts`:** cấu hình cũ có
+  override riêng cho function này nhưng Vercel không nhận diện đường dẫn đó
+  trong deployment. File `vercel/vercel.json` hiện chỉ dùng pattern chung
+  `api/*.ts`, đặt thời hạn tối đa 120 giây cho các function và bỏ pattern riêng.
+  Push config mới và redeploy; nếu function vẫn không xuất hiện trong tab
+  Functions thì kiểm tra commit có chứa `vercel/api/transcribe.ts`.
 - **Đăng nhập bị từ chối:** kiểm tra username/email, scrypt hash trong cột
-  `password`, role và trạng thái `active` trong tab `Student`.
+  `password` hoặc `password_hash`, role và trạng thái `active` trong tab
+  `Student`. Sau khi deploy bản API có chẩn đoán an toàn, Vercel Runtime Logs
+  có thể ghi một trong các mã `account_not_found`, `account_role_mismatch`,
+  `account_email_invalid`, `account_inactive` hoặc
+  `password_mismatch_or_hash_invalid`. Các mã này không chứa thông tin tài khoản
+  hay mật khẩu; dùng chúng để xác định trường nào cần sửa, không chia sẻ secrets.
+- **API báo thiếu/cấu hình sai Google service account hoặc
+  `GOOGLE_SHEET_ID`:** xác nhận `.env.vercel` đã được import vào đúng Vercel
+  project và môi trường **Production**, rồi redeploy. Tệp có thể dùng
+  `GOOGLE_SERVICE_ACCOUNT_JSON_B64`; API vẫn hỗ trợ biến JSON cũ
+  `GOOGLE_SERVICE_ACCOUNT_JSON` để tương thích. Service-account JSON phải có
+  `client_email`, `private_key`. Không gửi giá trị biến qua chat.
+- **Vercel trả `The application session signing secret is not configured`:**
+  thêm `APP_SESSION_SECRET` Production, dài tối thiểu 32 ký tự, rồi redeploy.
 - **Vercel trả 503:** kiểm tra tên các Environment Variables và redeploy.
 - **Google trả 403:** xác nhận Sheets/Drive API đã bật và service account có
   quyền Editor trên Sheet/folder; kiểm tra Sheet ID và Drive folder ID.
