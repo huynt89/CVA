@@ -44,15 +44,15 @@
                         </div>
                         <input type="hidden" name="role" value="student" class="role-input">
 
-                        <label for="login-username">Username</label>
-                        <input id="login-username" type="text" name="username" autocomplete="username" placeholder="your username" required>
+                        <label for="login-username">{{ t('username') }}</label>
+                        <input id="login-username" type="text" name="username" autocomplete="username" placeholder="{{ t('username') }}" required>
 
                         <label for="login-password">{{ t('password') }}</label>
                         <input id="login-password" type="password" name="password" autocomplete="current-password" placeholder="••••••" required>
 
                         <div class="login-actions">
                             <button class="primary-btn login-submit-btn" type="submit" data-student="{{ t('student_login') }}" data-teacher="{{ t('teacher_login') }}">{{ t('student_login') }}</button>
-                            <a class="secondary-btn" href="{{ url_for('register') }}">{{ t('register') }}</a>
+                            <a class="secondary-btn" id="registerLink" href="{{ url_for('register') }}">{{ t('register') }}</a>
                         </div>
                     </form>
                 {% else %}

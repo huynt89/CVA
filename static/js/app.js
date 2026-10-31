@@ -134,6 +134,7 @@ const showStatusMessage = (message, type = 'info') => {
 };
 
 const latestMediaUrls = { audio: '', video: '' };
+const latestDriveFileIds = { audio: '', video: '' };
 const pendingExerciseMedia = { audio: null, video: null };
 
 const submitLessonBtn = document.getElementById('submitLessonBtn');
@@ -170,7 +171,8 @@ if (submitLessonBtn) {
                     answer_2: answer2,
                     audio_url: latestMediaUrls.audio,
                     video_url: latestMediaUrls.video,
-                    sentence_words: answer2
+                    audio_file_id: latestDriveFileIds.audio,
+                    sentence_words: answer2,
                 })
             });
 
@@ -185,6 +187,8 @@ if (submitLessonBtn) {
                 showStatusMessage(`${successMessage} ${data.message || 'Google Drive sync was incomplete for one or more recordings.'}`, 'warning');
             } else if (data.google_sheet_saved === false || data.practice_sheet_saved === false) {
                 showStatusMessage(`${successMessage} ${data.message || 'Google Sheets sync was incomplete.'}`, 'warning');
+            } else if (data.ai_services_available === false) {
+                showStatusMessage(data.message || `${successMessage} AI evaluation was unavailable.`, 'warning');
             } else {
                 showStatusMessage(`${data.message || successMessage}`, 'success');
             }
@@ -192,6 +196,8 @@ if (submitLessonBtn) {
             pendingExerciseMedia.video = null;
             latestMediaUrls.audio = '';
             latestMediaUrls.video = '';
+            latestDriveFileIds.audio = '';
+            latestDriveFileIds.video = '';
         } catch (error) {
             console.error('Submit lesson error', error);
             showStatusMessage('Could not save your submission. Please try again.', 'warning');
@@ -345,6 +351,7 @@ try {
             } else {
                 latestMediaUrls.video = data.drive_url || data.local_url || '';
             }
+            latestDriveFileIds[mediaType] = data.drive_file_id || '';
             showStatusMessage(data.message || 'Media saved successfully.', 'success');
             return data;
         }

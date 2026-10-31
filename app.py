@@ -4,6 +4,8 @@ import os
 import random
 import re
 import sqlite3
+import secrets
+import sys
 import time
 import uuid
 from datetime import datetime
@@ -25,14 +27,35 @@ except Exception:  # pragma: no cover - optional runtime dependency
     google_drive_build = None
     MediaFileUpload = None
 
-BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / '.env', override=False)
+IS_FROZEN = bool(getattr(sys, 'frozen', False))
+BASE_DIR = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent)).resolve()
+if not IS_FROZEN:
+    load_dotenv(BASE_DIR / '.env', override=False)
 
 BASE_DIR.mkdir(parents=True, exist_ok=True)
-UPLOAD_DIR = BASE_DIR / 'uploads'
+configured_data_dir = os.getenv('ENG_APP_DATA_DIR', '').strip()
+if configured_data_dir:
+    DATA_DIR = Path(configured_data_dir).expanduser()
+elif IS_FROZEN:
+    DATA_DIR = Path(os.getenv('LOCALAPPDATA') or (Path.home() / 'AppData' / 'Local')) / 'CVA' / 'EngClassAI' / 'data'
+else:
+    DATA_DIR = BASE_DIR
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+UPLOAD_DIR = DATA_DIR / 'uploads'
 AUDIO_DIR = UPLOAD_DIR / 'audio'
 VIDEO_DIR = UPLOAD_DIR / 'video'
-DATA_FILE = BASE_DIR / 'eng_app.db'
+DATA_FILE = DATA_DIR / 'eng_app.db'
+PUBLIC_CLOUD_CONFIG_PATH = BASE_DIR / 'static' / 'js' / 'cloud-config.json'
+PUBLIC_CLOUD_CONFIG = (
+    json.loads(PUBLIC_CLOUD_CONFIG_PATH.read_text(encoding='utf-8'))
+    if PUBLIC_CLOUD_CONFIG_PATH.is_file()
+    else {}
+)
+VERCEL_API_BASE_URL = os.getenv(
+    'VERCEL_API_BASE_URL',
+    str(PUBLIC_CLOUD_CONFIG.get('vercel_api_base_url') or ''),
+).strip().rstrip('/')
 _GOOGLE_SHEET_READ_STATUS = {}
 
 for folder in (UPLOAD_DIR, AUDIO_DIR, VIDEO_DIR):
@@ -43,8 +66,25 @@ app = Flask(
     template_folder=str(BASE_DIR / 'templates'),
     static_folder=str(BASE_DIR / 'static'),
 )
-app.secret_key = 'engclass-ai-secret-key-2026'
+def get_app_secret_key():
+    configured_secret = os.getenv('APP_SECRET_KEY', '').strip()
+    if configured_secret:
+        return configured_secret
+    secret_path = DATA_DIR / '.session-secret'
+    if secret_path.is_file():
+        existing_secret = secret_path.read_text(encoding='utf-8').strip()
+        if existing_secret:
+            return existing_secret
+    generated_secret = secrets.token_urlsafe(48)
+    temporary_path = secret_path.with_name(f'{secret_path.name}.tmp')
+    temporary_path.write_text(generated_secret, encoding='utf-8')
+    temporary_path.replace(secret_path)
+    return generated_secret
+
+
+app.secret_key = get_app_secret_key()
 app.config['UPLOAD_FOLDER'] = str(UPLOAD_DIR)
+app.config['MAX_CONTENT_LENGTH'] = 30 * 1024 * 1024
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 DRIVE_FOLDER_CACHE_TTL = 300
@@ -54,6 +94,223 @@ PAGE_SIZE_OPTIONS = (5, 10, 20, 50, 100)
 
 def remote_ai_enabled():
     return os.getenv('ENABLE_REMOTE_AI', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def call_vercel_api(endpoint, payload, access_token=None, timeout=30):
+    if not VERCEL_API_BASE_URL or (endpoint != 'login' and not access_token):
+        logger.warning('Vercel API call skipped: endpoint or session token is not configured.')
+        return None
+    headers = {'Content-Type': 'application/json'}
+    if access_token:
+        headers['Authorization'] = f'Bearer {access_token}'
+    try:
+        response = requests.post(
+            f'{VERCEL_API_BASE_URL}/api/{endpoint.lstrip("/")}',
+            json=payload,
+            headers=headers,
+            timeout=timeout,
+        )
+    except requests.RequestException as exc:
+        logger.warning('Vercel API %s request failed: %s', endpoint, exc)
+        return None
+
+    if response.status_code != 200 and endpoint != 'login':
+        logger.warning('Vercel API %s returned HTTP %s.', endpoint, response.status_code)
+        return None
+    try:
+        result = response.json()
+    except ValueError:
+        logger.warning('Vercel API %s returned invalid JSON.', endpoint)
+        if endpoint == 'login':
+            return {
+                'status_code': response.status_code,
+                'error': (
+                    f'The sign-in service returned HTTP {response.status_code} '
+                    'without a valid response. Check the Vercel Runtime Logs.'
+                ),
+            }
+        return None
+    if isinstance(result, dict) and endpoint == 'login':
+        result.setdefault('status_code', response.status_code)
+    elif endpoint == 'login':
+        return {
+            'status_code': response.status_code,
+            'error': (
+                f'The sign-in service returned HTTP {response.status_code} '
+                'with an invalid response. Check the Vercel Runtime Logs.'
+            ),
+        }
+    return result if isinstance(result, dict) else None
+
+
+def evaluate_with_vercel_function(question, answer, expected, access_token, provider='gemini'):
+    if not answer or not access_token:
+        return None
+    result = call_vercel_api(
+        'evaluate',
+        {'question': question, 'answer': answer, 'expected': expected, 'provider': provider},
+        access_token,
+        timeout=35,
+    )
+    if not result:
+        return None
+    try:
+        return {
+            'score': max(0, min(100, int(result.get('score', 0)))),
+            'feedback': str(result.get('feedback') or 'Keep practicing.')[:2000],
+            'pronunciation': max(0, min(100, float(result.get('pronunciation', 0) or 0))),
+            'grammar': max(0, min(100, float(result.get('grammar', 0) or 0))),
+            'fluency': max(0, min(100, float(result.get('fluency', 0) or 0))),
+            'relevance': max(0, min(100, float(result.get('relevance', 0) or 0))),
+            'confidence': max(0, min(100, float(result.get('confidence', 0) or 0))),
+        }
+    except (TypeError, ValueError):
+        logger.warning('Vercel evaluation returned an invalid score payload.')
+        return None
+
+
+def upload_media_to_vercel_drive(file_path, file_name, media_type, access_token):
+    path = Path(file_path)
+    if not access_token or not path.is_file():
+        return None
+    try:
+        file_size = path.stat().st_size
+        if not file_size or file_size > 18 * 1024 * 1024:
+            logger.warning('Google Drive media upload skipped: file is empty or exceeds 18 MB.')
+            return None
+        import mimetypes
+
+        suffix = path.suffix.lower()
+        if suffix == '.webm':
+            content_type = 'audio/webm' if media_type == 'audio' else 'video/webm'
+        elif suffix in {'.m4a', '.mp4a'}:
+            content_type = 'audio/mp4'
+        elif suffix == '.ogg':
+            content_type = 'audio/ogg'
+        elif suffix == '.wav':
+            content_type = 'audio/wav'
+        elif suffix == '.mp4':
+            content_type = 'video/mp4'
+        else:
+            content_type = mimetypes.guess_type(path.name)[0] or (
+                'audio/mpeg' if media_type == 'audio' else 'video/mp4'
+            )
+        result = call_vercel_api(
+            'media-upload',
+            {
+                'file_name': str(file_name or path.name),
+                'mime_type': content_type,
+                'file_size': file_size,
+            },
+            access_token,
+            timeout=30,
+        )
+        upload_url = str((result or {}).get('upload_url') or '')
+        if not upload_url:
+            return None
+        with path.open('rb') as media_file:
+            upload_response = requests.put(
+                upload_url,
+                data=media_file,
+                headers={'Content-Type': content_type, 'Content-Length': str(file_size)},
+                timeout=120,
+            )
+        if upload_response.status_code not in {200, 201}:
+            logger.warning('Google Drive resumable upload returned HTTP %s.', upload_response.status_code)
+            return None
+        try:
+            uploaded_file = upload_response.json()
+        except ValueError:
+            logger.warning('Google Drive upload returned invalid file metadata.')
+            return None
+        file_id = str(uploaded_file.get('id') or '')
+        if not file_id:
+            logger.warning('Google Drive upload did not return a file ID.')
+            return None
+        completed = call_vercel_api(
+            'media-complete',
+            {'file_id': file_id},
+            access_token,
+            timeout=30,
+        )
+        if not completed:
+            return None
+        return {
+            'file_id': file_id,
+            'drive_url': str(completed.get('drive_url') or ''),
+        }
+    except OSError as exc:
+        logger.warning('Could not read media for Google Drive upload: %s', exc)
+        return None
+    except requests.RequestException as exc:
+        logger.warning('Google Drive resumable upload failed: %s', exc)
+        return None
+
+
+def transcribe_with_vercel_function(file_path, access_token, drive_file_id=None):
+    path = Path(file_path)
+    if not access_token:
+        return None
+    file_id = str(drive_file_id or '')
+    if not file_id:
+        if not path.is_file():
+            return None
+        upload = upload_media_to_vercel_drive(path, path.name, 'audio', access_token)
+        file_id = str((upload or {}).get('file_id') or '')
+        if not file_id:
+            return None
+    result = call_vercel_api(
+        'transcribe',
+        {'audio_name': path.name if path.is_file() else 'recording.webm', 'audio_file_id': file_id},
+        access_token,
+        timeout=120,
+    )
+    transcript = result.get('transcript') if result else None
+    return str(transcript).strip()[:5000] if transcript else None
+
+
+def call_google_function(operation, payload=None):
+    tokens = get_cloud_tokens()
+    if not tokens:
+        message = 'Google sync requires an active Vercel session. Please sign out and sign in again.'
+        logger.warning(message)
+        set_session_message('google_sync_warning', message)
+        return None
+
+    function_payload = {'operation': operation}
+    function_payload.update(payload or {})
+    result = call_vercel_api(
+        'google',
+        function_payload,
+        tokens['access_token'],
+        timeout=60,
+    )
+    if not result or result.get('ok') is not True:
+        message = (result or {}).get('error') or 'The Google sync service could not complete the request.'
+        set_session_message('google_sync_warning', message)
+        logger.warning('Vercel Google operation %s failed.', operation)
+        return None
+    return result
+
+
+def verify_cloud_request_user(user, access_token):
+    claims = call_vercel_api(
+        'session',
+        {},
+        access_token,
+        timeout=15,
+    )
+    if not claims:
+        return False
+    expected_email = str(user['email'] or '').strip().lower()
+    valid = (
+        str(claims.get('uid') or '') == expected_email
+        and str(claims.get('email') or '').strip().lower() == expected_email
+        and str(claims.get('role') or '') == str(user['role'] or '')
+    )
+    if not valid:
+        return False
+    return save_cloud_token(user['id'], access_token)
 
 
 def get_page_size():
@@ -156,6 +413,7 @@ TRANSLATIONS = {
         'teacher_login': 'Đăng nhập giáo viên',
         'register': 'Tạo tài khoản',
         'user': 'User',
+        'username': 'Tên đăng nhập',
         'email': 'Email',
         'password': 'Mật khẩu',
         'full_name': 'Họ và tên',
@@ -196,6 +454,7 @@ TRANSLATIONS = {
         'teacher_login': 'Teacher login',
         'register': 'Create account',
         'user': 'User',
+        'username': 'Username',
         'email': 'Email',
         'password': 'Password',
         'full_name': 'Full name',
@@ -319,6 +578,14 @@ def get_db():
 def init_db():
     conn = get_db()
     conn.execute('PRAGMA journal_mode = WAL')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS cloud_tokens (
+            user_id INTEGER PRIMARY KEY,
+            access_token TEXT NOT NULL,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    ''')
     conn.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -556,6 +823,42 @@ def init_db():
     conn.close()
 
 
+def save_cloud_token(user_id, access_token):
+    if not user_id or not access_token:
+        return False
+    conn = get_db()
+    try:
+        conn.execute(
+            '''
+            INSERT INTO cloud_tokens (user_id, access_token, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(user_id) DO UPDATE SET
+                access_token = excluded.access_token,
+                updated_at = CURRENT_TIMESTAMP
+            ''',
+            (user_id, access_token),
+        )
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def get_cloud_tokens(user_id=None):
+    user_id = user_id or session.get('user_id')
+    if not user_id:
+        return None
+    conn = get_db()
+    try:
+        row = conn.execute(
+            'SELECT access_token FROM cloud_tokens WHERE user_id = ?',
+            (user_id,),
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
 @app.context_processor
 def inject_i18n():
     lang = session.get('lang', 'en') or 'en'
@@ -717,7 +1020,7 @@ def get_gemini_client():
 
 
 def evaluate_with_gemini(question, answer, expected):
-    if not remote_ai_enabled():
+    if IS_FROZEN or not remote_ai_enabled():
         return None
     client = get_gemini_client()
     if not client:
@@ -798,7 +1101,7 @@ def evaluate_with_gemini(question, answer, expected):
 
 
 def evaluate_with_groq(question, answer, expected):
-    if not remote_ai_enabled():
+    if IS_FROZEN or not remote_ai_enabled():
         return None
     groq_api_key = os.getenv('GROQ_API_KEY', '').strip()
     if not groq_api_key or not answer:
@@ -977,7 +1280,7 @@ def resolve_local_media_path(media_path, media_type='audio'):
 
 
 def transcribe_audio_with_groq(audio_path):
-    if not remote_ai_enabled():
+    if IS_FROZEN or not remote_ai_enabled():
         return None
     groq_api_key = os.getenv('GROQ_API_KEY', '').strip()
     if not groq_api_key or not audio_path:
@@ -1007,7 +1310,7 @@ def transcribe_audio_with_groq(audio_path):
 
 
 def transcribe_audio_with_gemini(audio_path):
-    if not remote_ai_enabled():
+    if IS_FROZEN or not remote_ai_enabled():
         return None
     gemini_api_key = os.getenv('GEMINI_API_KEY', '').strip()
     if not gemini_api_key or not audio_path:
@@ -1145,6 +1448,7 @@ def normalize_practice_sheet_row(row):
     return [
         row.get('submitted_at') or row.get('created_at') or '',
         row.get('student_id', ''),
+        row.get('student_email', ''),
         row.get('student_name', ''),
         row.get('username', ''),
         row.get('class_name', ''),
@@ -1180,6 +1484,7 @@ def build_practice_sheet_row(record):
         'submission_id': record.get('id', ''),
         'submitted_at': record.get('submitted_at') or record.get('created_at') or datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'student_id': record.get('student_id', ''),
+        'student_email': record.get('student_email', ''),
         'student_name': record.get('student_name') or record.get('full_name') or '',
         'username': record.get('username', ''),
         'class_name': record.get('class_name', ''),
@@ -1346,14 +1651,55 @@ def sync_google_practice_into_db():
 
 
 def sync_practice_to_sheet(rows=None):
-    credentials = get_google_credentials()
-    if not credentials:
-        message = 'Google Sheets sync skipped: credentials are missing or invalid.'
-        logger.warning(message)
-        set_session_message('google_sync_warning', message)
-        return False
-
     try:
+        required_headers = ['submitted_at', 'student_id', 'student_email', 'student_name', 'username', 'class_name', 'lesson_id', 'lesson_title', 'task_1_score', 'task_2_score', 'task_3_score', 'task_4_score', 'overall_score', 'feedback', 'answer_1', 'answer_2', 'transcript_3', 'audio_url', 'video_url', 'status']
+        if rows is None:
+            conn = get_db()
+            try:
+                student_filter = ''
+                query_params = ()
+                if IS_FROZEN and session.get('user_role') == 'student':
+                    student_filter = 'WHERE s.student_id = ?'
+                    query_params = (session.get('user_id'),)
+                rows = [
+                    build_practice_sheet_row(dict(item)) for item in conn.execute(
+                        f'''
+                        SELECT s.*, u.full_name AS student_name, u.username, u.email AS student_email, u.class_name,
+                               l.title_en AS lesson_title, l.title_vi
+                        FROM submissions s
+                        JOIN users u ON u.id = s.student_id
+                        JOIN lessons l ON l.id = s.lesson_id
+                        {student_filter}
+                        ORDER BY s.created_at DESC
+                        ''',
+                        query_params,
+                    ).fetchall()
+                ]
+            finally:
+                conn.close()
+
+        sheet_values = [required_headers]
+        sheet_values.extend(normalize_practice_sheet_row(row) for row in rows)
+        if IS_FROZEN:
+            if session.get('user_role') == 'student':
+                result = call_google_function(
+                    'upsert_practice',
+                    {'headers': required_headers, 'rows': sheet_values[1:]},
+                )
+            else:
+                result = call_google_function(
+                    'replace_sheet',
+                    {'sheet': 'Practice', 'values': sheet_values},
+                )
+            return bool(result)
+
+        credentials = get_google_credentials()
+        if not credentials:
+            message = 'Google Sheets sync skipped: credentials are missing or invalid.'
+            logger.warning(message)
+            set_session_message('google_sync_warning', message)
+            return False
+
         client = gspread.authorize(credentials)
         sheet_id = os.getenv('GOOGLE_SHEET_ID', '').strip()
         sheet_name = os.getenv('GOOGLE_SHEET_NAME', 'EngClassAI')
@@ -1374,25 +1720,6 @@ def sync_practice_to_sheet(rows=None):
             return False
 
         worksheet = _get_or_create_worksheet(sheet, 'Practice', rows=5000, cols=30)
-        required_headers = ['submitted_at', 'student_id', 'student_name', 'username', 'class_name', 'lesson_id', 'lesson_title', 'task_1_score', 'task_2_score', 'task_3_score', 'task_4_score', 'overall_score', 'feedback', 'answer_1', 'answer_2', 'transcript_3', 'audio_url', 'video_url', 'status']
-        if rows is None:
-            conn = get_db()
-            rows = [
-                build_practice_sheet_row(dict(item)) for item in conn.execute(
-                    '''
-                    SELECT s.*, u.full_name AS student_name, u.username, u.class_name,
-                           l.title_en AS lesson_title, l.title_vi
-                    FROM submissions s
-                    JOIN users u ON u.id = s.student_id
-                    JOIN lessons l ON l.id = s.lesson_id
-                    ORDER BY s.created_at DESC
-                    '''
-                ).fetchall()
-            ]
-            conn.close()
-
-        sheet_values = [required_headers]
-        sheet_values.extend(normalize_practice_sheet_row(row) for row in rows)
         _replace_worksheet_values(worksheet, sheet_values)
 
         set_session_message('google_sync_warning', 'Google synced')
@@ -1413,6 +1740,14 @@ def get_lessons():
 
 def _read_google_worksheet_rows(sheet_title):
     _GOOGLE_SHEET_READ_STATUS[sheet_title.lower()] = False
+    if IS_FROZEN:
+        result = call_google_function('read_sheet', {'sheet': sheet_title})
+        rows = result.get('rows') if result else None
+        if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+            return []
+        _GOOGLE_SHEET_READ_STATUS[sheet_title.lower()] = True
+        return rows
+
     credentials = get_google_credentials()
     if not credentials:
         message = 'Google Sheets sync failed: credentials are missing or invalid.'
@@ -2115,6 +2450,9 @@ def get_student_progress_summary(student_id, lessons):
 
 
 def get_google_credentials():
+    if IS_FROZEN:
+        return None
+
     service_account_json = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON', '').strip()
     service_account_path = os.getenv('GOOGLE_SERVICE_ACCOUNT_PATH', '').strip()
 
@@ -2178,40 +2516,75 @@ def _replace_worksheet_values(worksheet, values):
     worksheet.update(values=values, range_name='A1', value_input_option='RAW')
 
 
+def merge_student_sheet_values(values, existing_values):
+    if not values:
+        return values
+    required_headers = [str(header) for header in values[0]]
+    existing_headers = [
+        str(header).strip()
+        for header in (existing_values[0] if existing_values else [])
+        if str(header).strip()
+    ]
+    headers = list(dict.fromkeys(existing_headers + required_headers))
+    existing_records = []
+    for row in (existing_values[1:] if existing_values else []):
+        record = {
+            header: str(row[index] if index < len(row) else '')
+            for index, header in enumerate(existing_headers)
+        }
+        if any(value.strip() for value in record.values()):
+            existing_records.append(record)
+
+    def account_key(record):
+        email = str(record.get('email') or '').strip().lower()
+        username = str(record.get('username') or '').strip().lower()
+        return email or username
+
+    previous_by_key = {
+        account_key(record): record
+        for record in existing_records
+        if account_key(record)
+    }
+    teacher_records = [
+        record for record in existing_records
+        if str(record.get('role') or '').strip().lower() == 'teacher'
+    ]
+    merged_records = []
+    included_teachers = set()
+    for incoming_row in values[1:]:
+        incoming = {
+            header: str(incoming_row[index] if index < len(incoming_row) else '')
+            for index, header in enumerate(required_headers)
+        }
+        previous = previous_by_key.get(account_key(incoming), {})
+        merged_records.append({**previous, **incoming})
+        if previous.get('role', '').strip().lower() == 'teacher':
+            included_teachers.add(account_key(previous))
+    merged_records.extend(
+        teacher for teacher in teacher_records
+        if account_key(teacher) not in included_teachers
+    )
+    return [
+        headers,
+        *[
+            [record.get(header, '') for header in headers]
+            for record in merged_records
+        ],
+    ]
+
+
 def sync_students_to_sheet(rows=None):
-    credentials = get_google_credentials()
-    if not credentials:
-        message = 'Google Sheets sync skipped: credentials are missing or invalid.'
-        logger.warning(message)
-        set_session_message('google_sync_warning', message)
-        return False
-
     try:
-        conn = get_db()
         if rows is None:
-            rows = [dict(item) for item in conn.execute('SELECT * FROM users WHERE role = ? ORDER BY full_name', ('student',)).fetchall()]
-        conn.close()
+            conn = get_db()
+            try:
+                rows = [dict(item) for item in conn.execute(
+                    'SELECT * FROM users WHERE role = ? ORDER BY full_name',
+                    ('student',),
+                ).fetchall()]
+            finally:
+                conn.close()
 
-        client = gspread.authorize(credentials)
-        sheet_id = os.getenv('GOOGLE_SHEET_ID', '').strip()
-        sheet_name = os.getenv('GOOGLE_SHEET_NAME', 'EngClassAI')
-
-        try:
-            if sheet_id:
-                sheet = client.open_by_key(sheet_id)
-            else:
-                try:
-                    sheet = client.open(sheet_name)
-                except gspread.SpreadsheetNotFound:
-                    sheet = client.create(sheet_name)
-                    logger.info('Created missing Google Sheet: %s', sheet_name)
-        except Exception as exc:
-            logger.warning('Could not open or create spreadsheet %s: %s', sheet_name, exc)
-            message = f'Google Sheets sync failed: spreadsheet "{sheet_name}" not found and could not be created automatically. Please check GOOGLE_SERVICE_ACCOUNT_PATH or GOOGLE_SHEET_ID.'
-            set_session_message('google_sync_warning', message)
-            return False
-
-        worksheet = _get_or_create_worksheet(sheet, 'Student', rows=2000, cols=20)
         required_headers = ['full_name', 'username', 'email', 'role', 'class_name', 'status', 'total_points', 'average_score']
         sheet_values = [required_headers]
         sheet_values.extend([
@@ -2227,6 +2600,43 @@ def sync_students_to_sheet(rows=None):
             ]
             for row in rows
         ])
+
+        if IS_FROZEN:
+            current_sheet = call_google_function('read_sheet', {'sheet': 'Student'})
+            if not current_sheet:
+                return False
+            current_headers = current_sheet.get('headers') or []
+            current_rows = current_sheet.get('rows') or []
+            existing_values = [current_headers] + [
+                [row.get(header, '') for header in current_headers]
+                for row in current_rows
+            ] if current_headers else []
+            sheet_values = merge_student_sheet_values(sheet_values, existing_values)
+            return bool(call_google_function(
+                'replace_sheet',
+                {'sheet': 'Student', 'values': sheet_values},
+            ))
+
+        credentials = get_google_credentials()
+        if not credentials:
+            message = 'Google Sheets sync skipped: credentials are missing or invalid.'
+            logger.warning(message)
+            set_session_message('google_sync_warning', message)
+            return False
+        client = gspread.authorize(credentials)
+        sheet_id = os.getenv('GOOGLE_SHEET_ID', '').strip()
+        sheet_name = os.getenv('GOOGLE_SHEET_NAME', 'EngClassAI')
+        if sheet_id:
+            sheet = client.open_by_key(sheet_id)
+        else:
+            try:
+                sheet = client.open(sheet_name)
+            except gspread.SpreadsheetNotFound:
+                sheet = client.create(sheet_name)
+                logger.info('Created missing Google Sheet: %s', sheet_name)
+        worksheet = _get_or_create_worksheet(sheet, 'Student', rows=2000, cols=20)
+        existing_values = worksheet.get_all_values() if hasattr(worksheet, 'get_all_values') else []
+        sheet_values = merge_student_sheet_values(sheet_values, existing_values)
         _replace_worksheet_values(worksheet, sheet_values)
 
         set_session_message('google_sync_warning', 'Google synced')
@@ -2239,39 +2649,14 @@ def sync_students_to_sheet(rows=None):
 
 
 def sync_lessons_to_sheet(rows=None):
-    credentials = get_google_credentials()
-    if not credentials:
-        message = 'Google Sheets sync skipped: credentials are missing or invalid.'
-        logger.warning(message)
-        set_session_message('google_sync_warning', message)
-        return False
-
     try:
-        conn = get_db()
         if rows is None:
-            rows = [dict(item) for item in conn.execute('SELECT * FROM lessons ORDER BY id').fetchall()]
-        conn.close()
+            conn = get_db()
+            try:
+                rows = [dict(item) for item in conn.execute('SELECT * FROM lessons ORDER BY id').fetchall()]
+            finally:
+                conn.close()
 
-        client = gspread.authorize(credentials)
-        sheet_id = os.getenv('GOOGLE_SHEET_ID', '').strip()
-        sheet_name = os.getenv('GOOGLE_SHEET_NAME', 'EngClassAI')
-
-        try:
-            if sheet_id:
-                sheet = client.open_by_key(sheet_id)
-            else:
-                try:
-                    sheet = client.open(sheet_name)
-                except gspread.SpreadsheetNotFound:
-                    sheet = client.create(sheet_name)
-                    logger.info('Created missing Google Sheet: %s', sheet_name)
-        except Exception as exc:
-            logger.warning('Could not open or create spreadsheet %s: %s', sheet_name, exc)
-            message = f'Google Sheets sync failed: spreadsheet "{sheet_name}" not found and could not be created automatically. Please check GOOGLE_SERVICE_ACCOUNT_PATH or GOOGLE_SHEET_ID.'
-            set_session_message('google_sync_warning', message)
-            return False
-
-        worksheet = _get_or_create_worksheet(sheet, 'Lesson', rows=5000, cols=30)
         required_headers = ['id', 'title_en', 'title_vi', 'class_level', 'week_number', 'open_date', 'close_date', 'video_url', 'topic_en', 'topic_vi', 'goal_en', 'goal_vi', 'vocabulary', 'dialogue', 'sample_question', 'speaking_question', 'expected_answer', 'sentence_words', 'exercise_text_vi', 'exercise_text_en', 'task_3_text', 'task_4_text']
         sheet_values = [required_headers]
         sheet_values.extend([
@@ -2301,6 +2686,31 @@ def sync_lessons_to_sheet(rows=None):
             ]
             for row in rows
         ])
+
+        if IS_FROZEN:
+            return bool(call_google_function(
+                'replace_sheet',
+                {'sheet': 'Lesson', 'values': sheet_values},
+            ))
+
+        credentials = get_google_credentials()
+        if not credentials:
+            message = 'Google Sheets sync skipped: credentials are missing or invalid.'
+            logger.warning(message)
+            set_session_message('google_sync_warning', message)
+            return False
+        client = gspread.authorize(credentials)
+        sheet_id = os.getenv('GOOGLE_SHEET_ID', '').strip()
+        sheet_name = os.getenv('GOOGLE_SHEET_NAME', 'EngClassAI')
+        if sheet_id:
+            sheet = client.open_by_key(sheet_id)
+        else:
+            try:
+                sheet = client.open(sheet_name)
+            except gspread.SpreadsheetNotFound:
+                sheet = client.create(sheet_name)
+                logger.info('Created missing Google Sheet: %s', sheet_name)
+        worksheet = _get_or_create_worksheet(sheet, 'Lesson', rows=5000, cols=30)
         _replace_worksheet_values(worksheet, sheet_values)
 
         set_session_message('google_sync_warning', 'Google synced')
@@ -2318,6 +2728,7 @@ def index():
         return redirect(url_for('dashboard'))
     return render_template(
         'login.html',
+        is_frozen=IS_FROZEN,
         registration_success=session.pop('registration_success', None),
         warning=session.pop('google_sync_warning', None),
     )
@@ -2328,8 +2739,62 @@ def login():
     if request.method == 'POST':
         raw_input = (request.form.get('username') or request.form.get('user') or '').strip()
         user_input = normalize_username(raw_input)
-        password = request.form.get('password', '').strip()
-        role = request.form.get('role', 'student')
+        password = request.form.get('password', '')
+        role = (request.form.get('role', 'student') or 'student').strip().lower()
+
+        if IS_FROZEN:
+            login_result = call_vercel_api(
+                'login',
+                {'username': raw_input.lower(), 'password': password, 'role': role},
+                timeout=30,
+            )
+            access_token = str((login_result or {}).get('access_token') or '')
+            account_email = str((login_result or {}).get('email') or '').strip().lower()
+            if (
+                not account_email
+                or str((login_result or {}).get('role') or '').strip().lower() != role
+            ):
+                access_token = ''
+            if not access_token:
+                status_code = int((login_result or {}).get('status_code') or 0)
+                error = (
+                    'Could not connect to the sign-in service. Check your internet connection and try again.'
+                    if status_code == 0
+                    else str((login_result or {}).get('error') or 'Username, password, or account role is incorrect.')
+                )
+                return render_template('login.html', is_frozen=True, error=error), 401
+
+            conn = get_db()
+            user = conn.execute(
+                'SELECT * FROM users WHERE lower(email) = ? AND role = ? LIMIT 1',
+                (account_email, role),
+            ).fetchone()
+            if not user:
+                conn.close()
+                return render_template(
+                    'login.html',
+                    is_frozen=True,
+                    error='No matching student or teacher profile exists in the local school records.',
+                ), 403
+            if user['is_active'] == 0:
+                conn.close()
+                return render_template(
+                    'login.html',
+                    is_frozen=True,
+                    error='This account is disabled. Contact your teacher.',
+                ), 403
+            conn.close()
+            if not save_cloud_token(user['id'], access_token):
+                return render_template(
+                    'login.html',
+                    is_frozen=True,
+                    error='Could not save your sign-in session. Please try again.',
+                ), 500
+            session.clear()
+            session['user_id'] = user['id']
+            session['user_role'] = user['role']
+            session['lang'] = 'en'
+            return redirect(url_for('dashboard'))
 
         conn = get_db()
         user = conn.execute(
@@ -2368,6 +2833,7 @@ def login():
 
     return render_template(
         'login.html',
+        is_frozen=IS_FROZEN,
         registration_success=session.pop('registration_success', None),
         warning=session.pop('google_sync_warning', None),
     )
@@ -2375,6 +2841,8 @@ def login():
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
+    if IS_FROZEN:
+        return redirect(url_for('login'))
     if request.method == 'POST':
         role = (request.form.get('role') or 'student').strip().lower()
         if role != 'student':
@@ -2422,6 +2890,14 @@ def register():
 
 @app.route('/logout')
 def logout():
+    user_id = session.get('user_id')
+    if user_id:
+        conn = get_db()
+        try:
+            conn.execute('DELETE FROM cloud_tokens WHERE user_id = ?', (user_id,))
+            conn.commit()
+        finally:
+            conn.close()
     session.clear()
     return redirect(url_for('login'))
 
@@ -3715,6 +4191,21 @@ def evaluate_speaking():
     answer = payload.get('answer', '')
     expected = payload.get('expected', '')
 
+    if IS_FROZEN:
+        user = require_login()
+        if not user:
+            return jsonify({'error': 'Please sign in again.'}), 401
+        tokens = get_cloud_tokens(user['id'])
+        access_token = str((tokens or {}).get('access_token') or '')
+        if not verify_cloud_request_user(user, access_token):
+            return jsonify({'error': 'Your Vercel session expired. Please sign in again.'}), 401
+        ai_result = evaluate_with_vercel_function(question, answer, expected, access_token)
+        if not ai_result:
+            ai_result = evaluate_with_vercel_function(question, answer, expected, access_token, 'groq')
+        if not ai_result:
+            return jsonify({'error': 'AI evaluation is temporarily unavailable.'}), 503
+        return jsonify(ai_result)
+
     ai_result = evaluate_with_gemini(question, answer, expected) or evaluate_with_groq(question, answer, expected)
     if ai_result:
         return jsonify(ai_result)
@@ -3762,6 +4253,14 @@ def submit_lesson():
     task_2_answer = str(payload.get('answer_2') or payload.get('sentence_words') or payload.get('sentence') or '').strip()
     audio_url = str(payload.get('audio_url') or payload.get('audio_path') or '').strip()
     video_url = str(payload.get('video_url') or '').strip()
+    audio_file_id = str(payload.get('audio_file_id') or '').strip()
+    cloud_tokens = get_cloud_tokens(user['id'])
+    access_token = str((cloud_tokens or {}).get('access_token') or '')
+    if IS_FROZEN and not verify_cloud_request_user(user, access_token):
+        return jsonify({
+            'saved': False,
+            'message': 'Your Vercel session expired or could not be verified. Please sign in again.',
+        }), 401
 
     lesson_title = lesson.get('title_en') or lesson.get('title_vi') or 'lesson'
     student_name = (user['full_name'] if 'full_name' in user.keys() and user['full_name'] else user['username']) if hasattr(user, 'keys') else (user.get('full_name') or user.get('username') or 'student')
@@ -3774,27 +4273,97 @@ def submit_lesson():
     sentence_expected = ' '.join(str(lesson.get('sentence_words') or '').split(','))
     question_text = lesson.get('sample_question') or lesson.get('speaking_question') or 'Answer the question.'
 
-    task_1_gemini = evaluate_with_gemini(question_text, task_1_answer, lesson_expected)
-    task_1_groq = evaluate_with_groq(question_text, task_1_answer, lesson_expected)
+    task_1_gemini = evaluate_with_vercel_function(
+        question_text,
+        task_1_answer,
+        lesson_expected,
+        access_token,
+    )
+    if IS_FROZEN:
+        task_1_groq = (
+            evaluate_with_vercel_function(
+                question_text,
+                task_1_answer,
+                lesson_expected,
+                access_token,
+                'groq',
+            )
+            if not task_1_gemini else None
+        )
+    else:
+        if not task_1_gemini:
+            task_1_gemini = evaluate_with_gemini(question_text, task_1_answer, lesson_expected)
+        task_1_groq = evaluate_with_groq(question_text, task_1_answer, lesson_expected)
     task_1_result = task_1_gemini or task_1_groq or evaluate_answer(question_text, task_1_answer, lesson_expected)
 
     task_2_prompt = 'Check if the sentence order is correct and natural in English.'
     task_2_ans = task_2_answer or ' '.join(str(lesson.get('sentence_words') or '').split(','))
-    task_2_gemini = evaluate_with_gemini(task_2_prompt, task_2_ans, sentence_expected)
-    task_2_groq = evaluate_with_groq(task_2_prompt, task_2_ans, sentence_expected)
+    task_2_gemini = evaluate_with_vercel_function(
+        task_2_prompt,
+        task_2_ans,
+        sentence_expected,
+        access_token,
+    )
+    if IS_FROZEN:
+        task_2_groq = (
+            evaluate_with_vercel_function(
+                task_2_prompt,
+                task_2_ans,
+                sentence_expected,
+                access_token,
+                'groq',
+            )
+            if not task_2_gemini else None
+        )
+    else:
+        if not task_2_gemini:
+            task_2_gemini = evaluate_with_gemini(task_2_prompt, task_2_ans, sentence_expected)
+        task_2_groq = evaluate_with_groq(task_2_prompt, task_2_ans, sentence_expected)
     task_2_result = task_2_gemini or task_2_groq or evaluate_sentence_reorder(task_2_ans, sentence_expected)
 
     transcript_text = ''
     task_3_gemini = None
     task_3_groq = None
     task_3_result = {'score': 0, 'feedback': 'No transcript available.', 'pronunciation': 0, 'grammar': 0, 'fluency': 0}
-    if final_audio_url:
+    if IS_FROZEN:
+        audio_path = get_pending_audio_path(user['id'], lesson_id)
+        if audio_path:
+            transcript_text = transcribe_with_vercel_function(
+                audio_path,
+                access_token,
+                audio_file_id,
+            ) or ''
+    elif final_audio_url:
         transcript_text = transcribe_audio(final_audio_url) or ''
         if transcript_text:
             task_3_gemini = evaluate_with_gemini(question_text, transcript_text, lesson_expected)
             task_3_groq = evaluate_with_groq(question_text, transcript_text, lesson_expected)
             task_3_result = task_3_gemini or task_3_groq or evaluate_answer(question_text, transcript_text, lesson_expected)
+    if IS_FROZEN and transcript_text:
+        task_3_gemini = evaluate_with_vercel_function(
+            question_text,
+            transcript_text,
+            lesson_expected,
+            access_token,
+        )
+        if not task_3_gemini:
+            task_3_groq = evaluate_with_vercel_function(
+                question_text,
+                transcript_text,
+                lesson_expected,
+                access_token,
+                'groq',
+            )
+        task_3_result = task_3_gemini or task_3_groq or evaluate_answer(question_text, transcript_text, lesson_expected)
     task_3_score = int(task_3_result.get('score', 0))
+    ai_services_available = (
+        not IS_FROZEN
+        or (
+            (not task_1_answer or bool(task_1_gemini or task_1_groq))
+            and (not task_2_ans or bool(task_2_gemini or task_2_groq))
+            and (not final_audio_url or bool(transcript_text))
+        )
+    )
 
     task_4_score = 0
     overall_score = round((task_1_result.get('score', 0) + task_2_result.get('score', 0) + task_3_score + task_4_score) / 4)
@@ -3907,6 +4476,8 @@ def submit_lesson():
         message = 'Submission saved locally and uploaded to Google Drive' if google_drive_saved else 'Submission saved locally, but Google Sheets could not be updated.'
     else:
         message = 'Submission saved and synced to Google Drive and Google Sheets.' if google_drive_saved else 'Submission saved and synced to Google Sheets.'
+    if not ai_services_available:
+        message = f'{message} AI evaluation or transcription was unavailable; local fallback scoring was used.'
 
     return jsonify({
         'saved': local_saved,
@@ -3927,6 +4498,7 @@ def submit_lesson():
         'google_drive_saved': google_drive_saved,
         'google_sheet_saved': practice_saved,
         'practice_sheet_saved': practice_saved,
+        'ai_services_available': ai_services_available,
         'message': message,
     })
 
@@ -3973,6 +4545,20 @@ def find_or_create_drive_folder(drive_service, folder_name='Practice', account_k
 
 
 def upload_to_google_drive(file_path, file_name, media_type='audio', lesson_title='', student_name=''):
+    if IS_FROZEN:
+        path = Path(str(file_path))
+        try:
+            if not path.is_file() or path.stat().st_size > 18 * 1024 * 1024:
+                logger.warning('Google Drive upload skipped: file is missing or larger than 18 MB.')
+                return None
+            tokens = get_cloud_tokens()
+            access_token = tokens.get('access_token') if tokens else None
+            result = upload_media_to_vercel_drive(path, file_name, media_type, access_token)
+            return str((result or {}).get('drive_url') or '') or None
+        except OSError as exc:
+            logger.warning('Could not read media for Google Drive upload: %s', exc)
+            return None
+
     if google_drive_build is None or MediaFileUpload is None:
         logger.warning('Google Drive upload skipped: googleapiclient is not installed.')
         return None
@@ -4047,16 +4633,31 @@ def save_media_submission(student_id, lesson_id, local_url, drive_url, media_typ
                 (student_id, int(lesson_id))
             ).fetchone()
             if existing:
-                conn.execute(
-                    'UPDATE submissions SET audio_path = ?, drive_url = ? WHERE id = ?',
-                    (local_file_name, drive_url, existing['id'])
-                )
+                if media_type == 'audio':
+                    conn.execute(
+                        'UPDATE submissions SET audio_path = ?, drive_url = ? WHERE id = ?',
+                        (local_file_name, drive_url, existing['id'])
+                    )
+                else:
+                    conn.execute(
+                        'UPDATE submissions SET drive_url = ? WHERE id = ?',
+                        (drive_url, existing['id'])
+                    )
                 conn.commit()
                 return existing['id']
 
         conn.execute(
             'INSERT INTO submissions (student_id, lesson_id, answer, score, feedback, audio_path, drive_url, teacher_note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            (student_id, int(lesson_id) if lesson_id else 0, '', 0, '', local_file_name, drive_url, '')
+            (
+                student_id,
+                int(lesson_id) if lesson_id else 0,
+                '',
+                0,
+                '',
+                local_file_name if media_type == 'audio' else '',
+                drive_url,
+                '',
+            )
         )
         conn.commit()
         return conn.execute('SELECT last_insert_rowid() AS id').fetchone()['id']
@@ -4064,13 +4665,41 @@ def save_media_submission(student_id, lesson_id, local_url, drive_url, media_typ
         conn.close()
 
 
+def get_pending_audio_path(student_id, lesson_id):
+    conn = get_db()
+    try:
+        row = conn.execute(
+            '''
+            SELECT audio_path FROM submissions
+            WHERE student_id = ? AND lesson_id = ?
+            ORDER BY created_at DESC LIMIT 1
+            ''',
+            (student_id, lesson_id),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row or not row['audio_path']:
+        return None
+    path = AUDIO_DIR / Path(str(row['audio_path'])).name
+    return path if path.is_file() else None
+
+
 @app.route('/api/upload_media', methods=['POST'])
 def upload_media():
+    user = require_login() if IS_FROZEN else None
+    if IS_FROZEN and not user:
+        return jsonify({'status': 'error', 'message': 'Please sign in before uploading media.'}), 401
+    tokens = get_cloud_tokens(user['id']) if user else None
+    access_token = str((tokens or {}).get('access_token') or '')
+    if IS_FROZEN and not verify_cloud_request_user(user, access_token):
+        return jsonify({'status': 'error', 'message': 'Your Vercel session expired. Please sign in again.'}), 401
     if 'file' not in request.files:
         return jsonify({'status': 'error', 'message': 'No file provided.'}), 400
 
     uploaded = request.files['file']
     media_type = request.form.get('media_type', 'audio')
+    if media_type not in {'audio', 'video'}:
+        return jsonify({'status': 'error', 'message': 'Unsupported media type.'}), 400
     if uploaded.filename == '':
         return jsonify({'status': 'error', 'message': 'Empty file name.'}), 400
 
@@ -4089,16 +4718,30 @@ def upload_media():
                 lesson_title = lesson.get('title_en') or lesson.get('title_vi') or lesson_title
         except (TypeError, ValueError):
             pass
-    student_name = request.form.get('student_name') or session.get('user_name') or 'student'
+    student_name = (
+        user['full_name'] or user['username']
+        if user else request.form.get('student_name') or session.get('user_name') or 'student'
+    )
     drive_file_name = build_drive_media_name(media_type, lesson_title, student_name, saved_path.suffix.lstrip('.'))
     local_url = f'/uploads/{media_type}/{unique_name}'
-    drive_url = upload_to_google_drive(saved_path, drive_file_name, media_type, lesson_title, student_name)
-    if drive_url:
-        message = 'File đã lưu local và upload lên Google Drive thành công.'
+    drive_file_id = ''
+    if IS_FROZEN:
+        drive_result = upload_media_to_vercel_drive(
+            saved_path,
+            drive_file_name,
+            media_type,
+            access_token,
+        )
+        drive_url = str((drive_result or {}).get('drive_url') or '')
+        drive_file_id = str((drive_result or {}).get('file_id') or '')
     else:
-        message = 'Lưu lên Google Drive thất bại. File đã lưu local.'
+        drive_url = upload_to_google_drive(saved_path, drive_file_name, media_type, lesson_title, student_name)
+    if drive_url:
+        message = 'The file was saved locally and uploaded to Google Drive successfully.'
+    else:
+        message = 'Google Drive upload failed. The file was saved locally.'
 
-    student_id = request.form.get('student_id') or session.get('user_id')
+    student_id = user['id'] if user else request.form.get('student_id') or session.get('user_id')
     if student_id:
         save_media_submission(student_id, lesson_id, local_url, drive_url or '', media_type)
 
@@ -4109,6 +4752,7 @@ def upload_media():
         'media_type': media_type,
         'local_url': local_url,
         'drive_url': drive_url or '',
+        'drive_file_id': drive_file_id,
         'drive_saved': bool(drive_url),
         'message': message,
     })
@@ -4123,4 +4767,9 @@ def serve_upload(media_type, filename):
 init_db()
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(
+        debug=not IS_FROZEN,
+        host='127.0.0.1' if IS_FROZEN else '0.0.0.0',
+        port=int(os.getenv('ENG_APP_PORT', '5000')),
+        use_reloader=not IS_FROZEN,
+    )

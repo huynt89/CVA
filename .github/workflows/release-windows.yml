@@ -1,0 +1,84 @@
+name: Build and publish Windows release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      DISTRIBUTION_REPOSITORY: ${{ vars.DISTRIBUTION_REPOSITORY }}
+      UPDATE_PUBLIC_KEY_B64: ${{ vars.UPDATE_PUBLIC_KEY_B64 }}
+      CVA_UPDATE_PRIVATE_KEY_B64: ${{ secrets.CVA_UPDATE_PRIVATE_KEY_B64 }}
+      DISTRIBUTION_TOKEN: ${{ secrets.DISTRIBUTION_TOKEN }}
+      RELEASE_VERSION: ${{ github.ref_name }}
+
+    steps:
+      - name: Check out private source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate release configuration
+        shell: pwsh
+        run: |
+          if (-not $env:DISTRIBUTION_REPOSITORY -or -not $env:UPDATE_PUBLIC_KEY_B64 -or -not $env:CVA_UPDATE_PRIVATE_KEY_B64 -or -not $env:DISTRIBUTION_TOKEN) {
+            throw "Set DISTRIBUTION_REPOSITORY and UPDATE_PUBLIC_KEY_B64 repository variables, and CVA_UPDATE_PRIVATE_KEY_B64 and DISTRIBUTION_TOKEN secrets."
+          }
+          if (Select-String -Path "static/js/cloud-config.json" -Pattern "REPLACE_" -Quiet) {
+            throw "Complete static/js/cloud-config.json before building a release."
+          }
+
+      - name: Run Python tests
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller
+          python -m unittest discover -s tests -v
+
+      - name: Configure signed updater
+        run: python tools/release_update.py configure --repository $env:DISTRIBUTION_REPOSITORY --public-key $env:UPDATE_PUBLIC_KEY_B64
+
+      - name: Validate Vercel API
+        shell: pwsh
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build application and launcher
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onedir --name EngClassAI --add-data "templates;templates" --add-data "static;static" app.py
+          New-Item -ItemType Directory -Force -Path "dist/release" | Out-Null
+          python -m PyInstaller --noconfirm --clean --onefile --noconsole --name CVA-Launcher --distpath "dist/launcher" --workpath "build/launcher" launcher.py
+          $archive = "dist/release/CVA-EngClassAI-$env:RELEASE_VERSION.zip"
+          Compress-Archive -Path "dist/EngClassAI" -DestinationPath $archive -CompressionLevel Optimal
+          Copy-Item "dist/launcher/CVA-Launcher.exe" "dist/release/CVA-Launcher.exe"
+          python tools/release_update.py sign --version $env:RELEASE_VERSION --asset $archive --output-directory "dist/release"
+
+      - name: Publish to public distribution repository
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.DISTRIBUTION_TOKEN }}
+        run: |
+          $archive = "dist/release/CVA-EngClassAI-$env:RELEASE_VERSION.zip"
+          gh release create $env:RELEASE_VERSION `
+            $archive `
+            "dist/release/CVA-Launcher.exe" `
+            "dist/release/update-manifest.json" `
+            "dist/release/update-manifest.sig" `
+            --repo $env:DISTRIBUTION_REPOSITORY `
+            --title "CVA Let's Speak! $env:RELEASE_VERSION" `
+            --notes "Automated Windows application release."

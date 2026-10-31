@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "api/*.ts": {
+      "maxDuration": 60
+    },
+    "api/transcribe.ts": {
+      "maxDuration": 120
+    }
+  }
+}
