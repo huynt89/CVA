@@ -55,9 +55,15 @@ hiện.
 
 1. Đăng nhập [Vercel](https://vercel.com), chọn **Add New → Project**, kết nối
    GitHub và import repo private `CVA`.
-2. Chọn `vercel` làm **Root Directory**, framework preset **Other**. Không
-   chọn thư mục gốc repo vì ở đó có `app.py` của ứng dụng desktop.
-3. Mở **Settings → Environment Variables** và tạo các biến cho **Production**:
+2. Chọn `vercel` làm **Root Directory** và **Other** làm Framework Preset.
+   Không chọn thư mục gốc repo vì ở đó có `app.py` của ứng dụng desktop.
+   Nếu project trước đây dùng Flask/Python, phải đổi preset và xóa các lệnh
+   Build/Install riêng cho Python; để Output Directory trống. Không cần
+   `.vercelignore` bên trong `vercel/`.
+3. Sau khi deploy, xác nhận `api/login.ts` xuất hiện trong danh sách Functions.
+   Đảm bảo deployment mới được đặt Production nếu ứng dụng gọi production
+   domain; Preview deployment không tự chuyển production alias.
+4. Mở **Settings → Environment Variables** và tạo các biến cho **Production**:
 
    | Tên biến | Giá trị |
    |---|---|
@@ -69,19 +75,19 @@ hiện.
    | `GOOGLE_SHEET_ID` | ID Google Spreadsheet |
    | `GOOGLE_DRIVE_FOLDER_ID` | ID thư mục Drive dùng lưu bài nộp |
 
-4. Đặt các biến là **Sensitive/Secret** nếu Vercel hiển thị lựa chọn đó. Không
+5. Đặt các biến là **Sensitive/Secret** nếu Vercel hiển thị lựa chọn đó. Không
    đưa chúng vào GitHub Actions, `static/js/cloud-config.json`, EXE, chat hoặc
    log.
-5. Tạo `APP_SESSION_SECRET` bằng bộ tạo mật khẩu của hệ điều hành hoặc lệnh
+6. Tạo `APP_SESSION_SECRET` bằng bộ tạo mật khẩu của hệ điều hành hoặc lệnh
    Python sau; chỉ lưu kết quả trong Vercel, không commit:
 
    ```powershell
    py -c "import secrets; print(secrets.token_urlsafe(48))"
    ```
 
-6. Với `GOOGLE_SERVICE_ACCOUNT_JSON`, sao chép nguyên nội dung `{ ... }` vào
+7. Với `GOOGLE_SERVICE_ACCOUNT_JSON`, sao chép nguyên nội dung `{ ... }` vào
    value. Không commit file JSON.
-7. Lưu biến, deploy project rồi mở **Settings → Domains** để lấy URL production,
+8. Lưu biến, deploy project rồi mở **Settings → Domains** để lấy URL production,
    ví dụ `https://cva-api-yourname.vercel.app`.
 
 ## 4. Cấu hình URL Vercel trong ứng dụng

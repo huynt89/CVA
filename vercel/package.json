@@ -5,7 +5,7 @@
     "node": ">=22 <25"
   },
   "scripts": {
-    "build": "tsc --noEmit"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "googleapis": "^160.0.0"

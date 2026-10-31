@@ -59,13 +59,23 @@ hay mật khẩu vào GitHub.
 2. Đăng nhập [Vercel](https://vercel.com) → **Add New → Project** → import repo
    private `CVA`.
 3. Trong **Root Directory**, chọn thư mục `vercel` (không chọn thư mục gốc
-   repo). Chọn **Other** nếu Vercel yêu cầu framework preset.
+   repo).
 4. Thư mục `vercel` chứa riêng API TypeScript, thư viện dùng chung và cấu hình
    Vercel. Nó không chứa `app.py` nên Vercel không thể khởi chạy ứng dụng
    desktop Python làm Function.
-5. Giữ `vercel/.vercelignore` cùng các file bên trong `vercel/`. Sau khi push
-   thay đổi, vào **Settings → Build and Deployment** xác nhận **Root Directory**
-   là `vercel`, rồi redeploy một deployment mới từ commit vừa push.
+5. Trong **Settings → Build and Deployment**, đặt **Framework Preset** thành
+   **Other** (không để Flask/Python), và xác nhận **Root Directory** là `vercel`.
+   Tắt **Override** cho Build Command hoặc xóa giá trị Build Command để Vercel
+   tự phát hiện và đóng gói `api/*.ts`. Không nhập `npm run typecheck` làm Build
+   Command: lệnh đó chỉ kiểm tra kiểu và không tạo deployment output.
+   Để Install Command mặc định (npm install) và Output Directory trống. Không
+   cần `.vercelignore` trong `vercel/`, vì thư mục này đã là riêng biệt và
+   không chứa ứng dụng desktop `app.py`.
+6. Sau khi push thay đổi, tạo deployment mới từ commit đó. Nếu domain
+   `cva-liard.vercel.app` là production domain, phải promote deployment mới lên
+   **Production** (hoặc deploy nhánh Production Branch), không chỉ redeploy một
+   Preview deployment. Build Logs phải cài dependency Node/npm và deployment
+   phải liệt kê các Function dưới `api/`, trong đó có `api/login.ts`.
 
 ## C. Đặt Environment Variables
 
@@ -135,11 +145,26 @@ Sau khi deploy, sao chép domain production dạng
 - **Vercel Logs báo `could not import "app.py"` hoặc
   `sqlite3.OperationalError: unable to open database file`:** Vercel đang chạy
   nhầm ứng dụng desktop Python thay vì các API TypeScript. Vào **Settings →
-  Build and Deployment**, đổi **Root Directory** thành `vercel` (không phải
-  repo root), lưu lại và redeploy từ commit mới nhất có thư mục `vercel/`.
-  Kiểm tra `vercel/.vercelignore` có được đẩy lên GitHub. Khi deploy đúng,
-  request POST thiếu dữ liệu tới `/api/login` phải trả lỗi JSON HTTP 400,
-  không phải `FUNCTION_INVOCATION_FAILED`.
+  Build and Deployment**, đặt **Root Directory** thành `vercel` và
+  **Framework Preset** thành **Other** (không phải Flask/Python), lưu lại và
+  redeploy từ commit mới nhất có thư mục `vercel/`. Build Logs phải cho thấy
+  Node/npm, không được dò Flask entrypoint.
+- **Build báo `No Flask entrypoint found`:** Root Directory có thể đã đúng,
+  nhưng **Framework Preset** vẫn chọn Flask. Đổi sang **Other**, xóa mọi
+  Python-specific Build/Install command override, để Output Directory trống,
+  rồi tạo deployment mới. Khi deploy đúng, request POST thiếu dữ liệu tới
+  `/api/login` trả lỗi JSON HTTP 400 thay vì `FUNCTION_INVOCATION_FAILED`.
+- **`/api/login` trả HTTP 404 `NOT_FOUND`:** deployment/domain hiện tại không
+  có Function route đó. Xác nhận build mới thành công và Build Logs liệt kê
+  `api/login.ts` như Function. Nếu Build Logs cảnh báo
+  `Build output contains no "functions", "static", or "services" directory`,
+  kiểm tra **Build Command**: xóa command `npm run build` hoặc
+  `npm run typecheck` và tắt Override. Các lệnh TypeScript này chỉ type-check,
+  không tạo output; Vercel cần tự phát hiện/đóng gói các file trong `api/`.
+  Kiểm tra URL deployment trực tiếp của build mới;
+  nếu URL đó chạy nhưng `cva-liard.vercel.app` vẫn 404, gán/promote deployment
+  thành **Production** để domain production trỏ đúng deployment. Không cần
+  `.vercelignore` trong thư mục `vercel/`.
 - **Đăng nhập bị từ chối:** kiểm tra username/email, scrypt hash trong cột
   `password`, role, `active` trong status và hồ sơ email/role cục bộ.
 - **Vercel trả 503:** kiểm tra tên các Environment Variables và redeploy.
