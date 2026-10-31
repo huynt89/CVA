@@ -8,10 +8,9 @@ hiện.
 
 1. Clone repo `CVA` về máy.
 2. Sao chép mã nguồn vào thư mục gốc repo, giữ nguyên các thư mục:
-   `api`, `.github`, `docs`, `lib`, `static`, `templates`, `tests`, `tools`
+   `.github`, `docs`, `static`, `templates`, `tests`, `tools`, `vercel`
    cùng các file gốc như `app.py`, `launcher.py`, `launcher_config.py`,
-   `requirements.txt`, `package.json`, `package-lock.json`, `tsconfig.json`,
-   `vercel.json`, `.gitignore` và `README.md`.
+   `requirements.txt`, `.gitignore` và `README.md`.
 3. **Không sao chép/commit** `.env`, `.session-secret`, `*.db`, `uploads`,
    `huyntupload-drive-app-778fe4e22bff.json` hoặc JSON service account khác,
    `.venv`, `node_modules`, `build`, `dist` hay dữ liệu cá nhân.
@@ -56,7 +55,8 @@ hiện.
 
 1. Đăng nhập [Vercel](https://vercel.com), chọn **Add New → Project**, kết nối
    GitHub và import repo private `CVA`.
-2. Chọn thư mục gốc repo làm **Root Directory**, framework preset **Other**.
+2. Chọn `vercel` làm **Root Directory**, framework preset **Other**. Không
+   chọn thư mục gốc repo vì ở đó có `app.py` của ứng dụng desktop.
 3. Mở **Settings → Environment Variables** và tạo các biến cho **Production**:
 
    | Tên biến | Giá trị |

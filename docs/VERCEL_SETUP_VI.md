@@ -58,13 +58,14 @@ hay mật khẩu vào GitHub.
 1. Push mã nguồn lên repo private GitHub `CVA`.
 2. Đăng nhập [Vercel](https://vercel.com) → **Add New → Project** → import repo
    private `CVA`.
-3. Đặt **Root Directory** là thư mục gốc repo. Chọn **Other** nếu Vercel yêu
-   cầu framework preset.
-4. API functions nằm trong thư mục `api` ở root.
-5. Giữ file `.vercelignore` ở root repo. File này chỉ cho phép `api/`, `lib/`
-   và các file cấu hình Node/Vercel cần thiết được gửi lên Vercel; nhờ đó
-   Vercel không nhận diện nhầm `app.py` (ứng dụng desktop) thành Python
-   Function. Sau khi thêm/cập nhật file, push lên repo private và redeploy.
+3. Trong **Root Directory**, chọn thư mục `vercel` (không chọn thư mục gốc
+   repo). Chọn **Other** nếu Vercel yêu cầu framework preset.
+4. Thư mục `vercel` chứa riêng API TypeScript, thư viện dùng chung và cấu hình
+   Vercel. Nó không chứa `app.py` nên Vercel không thể khởi chạy ứng dụng
+   desktop Python làm Function.
+5. Giữ `vercel/.vercelignore` cùng các file bên trong `vercel/`. Sau khi push
+   thay đổi, vào **Settings → Build and Deployment** xác nhận **Root Directory**
+   là `vercel`, rồi redeploy một deployment mới từ commit vừa push.
 
 ## C. Đặt Environment Variables
 
@@ -133,11 +134,12 @@ Sau khi deploy, sao chép domain production dạng
   deployment và kết nối mạng.
 - **Vercel Logs báo `could not import "app.py"` hoặc
   `sqlite3.OperationalError: unable to open database file`:** Vercel đang chạy
-  nhầm ứng dụng desktop Python thay vì các API TypeScript. Kiểm tra `.vercelignore`
-  ở root repo, đảm bảo file được commit/push và project dùng đúng Root Directory;
-  sau đó redeploy. Khi deploy đúng, request POST thiếu dữ liệu tới
-  `/api/login` phải trả lỗi JSON HTTP 400, không phải
-  `FUNCTION_INVOCATION_FAILED`.
+  nhầm ứng dụng desktop Python thay vì các API TypeScript. Vào **Settings →
+  Build and Deployment**, đổi **Root Directory** thành `vercel` (không phải
+  repo root), lưu lại và redeploy từ commit mới nhất có thư mục `vercel/`.
+  Kiểm tra `vercel/.vercelignore` có được đẩy lên GitHub. Khi deploy đúng,
+  request POST thiếu dữ liệu tới `/api/login` phải trả lỗi JSON HTTP 400,
+  không phải `FUNCTION_INVOCATION_FAILED`.
 - **Đăng nhập bị từ chối:** kiểm tra username/email, scrypt hash trong cột
   `password`, role, `active` trong status và hồ sơ email/role cục bộ.
 - **Vercel trả 503:** kiểm tra tên các Environment Variables và redeploy.

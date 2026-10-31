@@ -53,6 +53,7 @@ jobs:
 
       - name: Validate Vercel API
         shell: pwsh
+        working-directory: vercel
         run: |
           npm ci
           npm run build
