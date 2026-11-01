@@ -26,6 +26,7 @@ class AppFeatureTests(unittest.TestCase):
 
             with patch.object(app_module, 'BASE_DIR', app_dir):
                 with patch.dict(os.environ, {
+                    'GOOGLE_SERVICE_ACCOUNT_JSON_B64': '',
                     'GOOGLE_SERVICE_ACCOUNT_PATH': str(missing_original_path),
                     'GOOGLE_SERVICE_ACCOUNT_JSON': '',
                 }):
@@ -38,6 +39,31 @@ class AppFeatureTests(unittest.TestCase):
 
             self.assertEqual(result, 'credentials')
             self.assertEqual(load_credentials.call_args.args[0], credentials_file)
+
+    def test_google_credentials_can_load_base64_service_account_json(self):
+        encoded_credentials = app_module.base64.b64encode(
+            json.dumps({'type': 'service_account'}).encode('utf-8')
+        ).decode('ascii')
+        with patch.dict(os.environ, {
+            'GOOGLE_SERVICE_ACCOUNT_JSON_B64': encoded_credentials,
+            'GOOGLE_SERVICE_ACCOUNT_JSON': '',
+            'GOOGLE_SERVICE_ACCOUNT_PATH': '',
+        }):
+            with patch.object(
+                app_module.service_account.Credentials,
+                'from_service_account_info',
+                return_value='credentials',
+            ) as load_credentials:
+                result = app_module.get_google_credentials()
+
+        self.assertEqual(result, 'credentials')
+        load_credentials.assert_called_once_with(
+            {'type': 'service_account'},
+            scopes=[
+                'https://www.googleapis.com/auth/spreadsheets',
+                'https://www.googleapis.com/auth/drive',
+            ],
+        )
 
     def test_browser_command_opens_an_isolated_app_window(self):
         command = desktop_entry.browser_command(
@@ -202,13 +228,13 @@ class AppFeatureTests(unittest.TestCase):
             },
         ]
         original_read_rows = app_module._read_google_worksheet_rows
-        app_module._read_google_worksheet_rows = lambda title: sheet_rows
+        app_module._read_google_worksheet_rows = lambda title: sheet_rows if title == 'Users' else []
         try:
             synced = app_module.sync_google_students_into_db()
         finally:
             app_module._read_google_worksheet_rows = original_read_rows
 
-        self.assertEqual([row['role'] for row in synced], ['student'])
+        self.assertEqual([row['role'] for row in synced], ['teacher'])
         conn = app_module.get_db()
         huynt = conn.execute(
             'SELECT role FROM users WHERE username = ?',
@@ -220,18 +246,19 @@ class AppFeatureTests(unittest.TestCase):
         ).fetchone()
         conn.close()
         self.assertEqual(huynt['role'], 'teacher')
-        self.assertEqual(sheet_teacher['role'], 'student')
+        self.assertEqual(sheet_teacher['role'], 'teacher')
 
     def test_new_google_sheet_students_use_default_password(self):
         sheet_rows = [{
             'full_name': 'New Sheet Student',
             'username': 'newsheetstudent',
             'email': 'newsheetstudent@example.test',
+            'role': 'student',
             'class_name': '8A',
             'password': '',
         }]
         original_read_rows = app_module._read_google_worksheet_rows
-        app_module._read_google_worksheet_rows = lambda title: sheet_rows
+        app_module._read_google_worksheet_rows = lambda title: sheet_rows if title == 'Users' else []
         try:
             synced = app_module.sync_google_students_into_db()
         finally:
@@ -462,7 +489,7 @@ class AppFeatureTests(unittest.TestCase):
             with app_module.app.test_request_context('/'):
                 self.assertTrue(app_module.sync_students_to_sheet([{'full_name': 'Test User', 'username': 'testuser', 'email': 'testuser@example.com', 'role': 'student', 'class_name': '7A', 'is_active': True, 'total_points': 0, 'average_score': 0}]))
                 self.assertTrue(app_module.sync_lessons_to_sheet([{'id': 1, 'title_en': 'Lesson 1', 'title_vi': 'BÃ i 1', 'class_level': '7', 'week_number': 1, 'open_date': '2026-10-20', 'close_date': '2026-10-27', 'video_url': 'https://example.com', 'sample_question': 'What?', 'speaking_question': 'What?', 'expected_answer': 'A', 'sentence_words': 'A,B', 'exercise_text_vi': 'Vi', 'exercise_text_en': 'En'}]))
-                self.assertIn('Student', sheet_titles)
+                self.assertIn('Users', sheet_titles)
                 self.assertIn('Lesson', sheet_titles)
         finally:
             app_module.gspread.authorize = original_authorize
@@ -528,7 +555,7 @@ class AppFeatureTests(unittest.TestCase):
                 self.assertTrue(app_module.sync_lessons_to_sheet(lessons))
                 self.assertTrue(app_module.sync_practice_to_sheet(practice))
 
-            self.assertEqual(set(client.sheet.worksheets), {'Student', 'Lesson', 'Practice'})
+            self.assertEqual(set(client.sheet.worksheets), {'Users', 'Lesson', 'Practice'})
             for worksheet in client.sheet.worksheets.values():
                 self.assertEqual(worksheet.update_calls, 1)
                 self.assertEqual(len(worksheet.rows), 201)
@@ -619,7 +646,9 @@ class AppFeatureTests(unittest.TestCase):
             for index in range(200)
         ]
         original_read_rows = app_module._read_google_worksheet_rows
-        app_module._read_google_worksheet_rows = lambda title: students if title == 'Student' else lessons
+        for row in students:
+            row['role'] = 'student'
+        app_module._read_google_worksheet_rows = lambda title: students if title == 'Users' else lessons
         try:
             synced_students = app_module.sync_google_students_into_db()
             synced_lessons = app_module.sync_google_lessons_into_db()
@@ -906,13 +935,13 @@ class AppFeatureTests(unittest.TestCase):
         conn.close()
 
         original_read = app_module._read_google_worksheet_rows
-        app_module._read_google_worksheet_rows = lambda title: [] if title == 'Student' else []
-        app_module._GOOGLE_SHEET_READ_STATUS['student'] = True
+        app_module._read_google_worksheet_rows = lambda title: [] if title == 'Users' else []
+        app_module._GOOGLE_SHEET_READ_STATUS['users'] = True
         try:
             synced = app_module.sync_google_students_into_db()
         finally:
             app_module._read_google_worksheet_rows = original_read
-            app_module._GOOGLE_SHEET_READ_STATUS.pop('student', None)
+            app_module._GOOGLE_SHEET_READ_STATUS.pop('users', None)
 
         conn = app_module.get_db()
         remaining = conn.execute('SELECT id FROM users WHERE id = ?', (student_id,)).fetchone()
@@ -1442,33 +1471,38 @@ class AppFeatureTests(unittest.TestCase):
 
     def test_teacher_profile_changes_persist_after_database_initialization(self):
         conn = app_module.get_db()
-        teacher = conn.execute("SELECT id FROM users WHERE role = 'teacher' ORDER BY id LIMIT 1").fetchone()
+        teacher = conn.execute("SELECT id, email FROM users WHERE role = 'teacher' ORDER BY id LIMIT 1").fetchone()
         conn.close()
 
-        with app_module.app.test_client() as client:
-            with client.session_transaction() as sess:
-                sess['user_id'] = teacher['id']
-                sess['user_role'] = 'teacher'
+        with patch.object(app_module, 'sync_teacher_profile_to_sheet', return_value=(True, '')) as sync_profile:
+            with app_module.app.test_client() as client:
+                with client.session_transaction() as sess:
+                    sess['user_id'] = teacher['id']
+                    sess['user_role'] = 'teacher'
 
-            response = client.post(
-                '/teacher/profile',
-                data={
-                    'full_name': 'Updated Teacher Name',
-                    'username': 'updatedteacher',
-                    'email': 'updated.teacher@example.test',
-                    'password': '',
-                },
-            )
-            self.assertEqual(response.status_code, 302)
-            profile_page = client.get(response.location)
-            page = profile_page.get_data(as_text=True)
-            self.assertEqual(profile_page.status_code, 200)
-            self.assertIn('Updated Teacher Name', page)
-            self.assertIn('Your account details have been saved successfully.', page)
-            self.assertIn('My Account', page)
-            self.assertIn('Save changes', page)
-            self.assertNotIn('Há» vÃ  tÃªn', page)
-            self.assertNotIn('Máº­t kháº©u má»›i', page)
+                response = client.post(
+                    '/teacher/profile',
+                    data={
+                        'full_name': 'Updated Teacher Name',
+                        'username': 'updatedteacher',
+                        'email': 'updated.teacher@example.test',
+                        'password': '',
+                    },
+                )
+                self.assertEqual(response.status_code, 302)
+                profile_page = client.get(response.location)
+                page = profile_page.get_data(as_text=True)
+                self.assertEqual(profile_page.status_code, 200)
+                self.assertIn('Updated Teacher Name', page)
+                self.assertIn('Your account details have been saved successfully.', page)
+                self.assertIn('synced to the Google Sheets Users sheet.', page)
+                self.assertIn('My Account', page)
+                self.assertIn('Save changes', page)
+                self.assertNotIn('Há» vÃ  tÃªn', page)
+                self.assertNotIn('Máº­t kháº©u má»›i', page)
+            sync_profile.assert_called_once()
+            self.assertEqual(sync_profile.call_args.args[0]['email'], teacher['email'])
+            self.assertEqual(sync_profile.call_args.args[1]['email'], 'updated.teacher@example.test')
 
         app_module.init_db()
         conn = app_module.get_db()
@@ -1481,6 +1515,139 @@ class AppFeatureTests(unittest.TestCase):
             (updated_teacher['full_name'], updated_teacher['username'], updated_teacher['email']),
             ('Updated Teacher Name', 'updatedteacher', 'updated.teacher@example.test'),
         )
+
+    def test_users_sheet_sync_imports_teacher_and_student_roles(self):
+        rows = [
+            {
+                'full_name': 'Sheet Teacher',
+                'username': 'sheetteacher',
+                'email': 'sheetteacher@example.test',
+                'role': 'teacher',
+                'status': 'active',
+            },
+            {
+                'full_name': 'Sheet Student',
+                'username': 'sheetstudent',
+                'email': 'sheetstudent@example.test',
+                'role': 'student',
+                'class_name': '6A',
+                'status': 'active',
+            },
+        ]
+        original_read = app_module._read_google_worksheet_rows
+        app_module._read_google_worksheet_rows = lambda title: rows if title == 'Users' else []
+        try:
+            synced = app_module.sync_google_students_into_db()
+        finally:
+            app_module._read_google_worksheet_rows = original_read
+
+        self.assertEqual({account['role'] for account in synced}, {'student', 'teacher'})
+        conn = app_module.get_db()
+        imported = conn.execute(
+            'SELECT username, role FROM users WHERE username IN (?, ?)',
+            ('sheetteacher', 'sheetstudent'),
+        ).fetchall()
+        conn.close()
+        self.assertEqual({account['role'] for account in imported}, {'student', 'teacher'})
+
+    def test_teacher_profile_sync_updates_users_sheet_and_hashes_new_password(self):
+        password_hash = app_module.hash_password_for_sheet('old-password')
+        worksheet = Mock()
+        worksheet.get_all_values.return_value = [
+            ['full_name', 'username', 'email', 'password', 'role', 'class_name', 'status'],
+            ['Teacher', 'oldteacher', 'old@example.test', password_hash, 'teacher', '', 'active'],
+        ]
+        spreadsheet = Mock()
+        spreadsheet.worksheet.return_value = worksheet
+        client = Mock()
+        client.open_by_key.return_value = spreadsheet
+        user = {'full_name': 'Teacher', 'username': 'oldteacher', 'email': 'old@example.test'}
+        profile = {
+            'full_name': 'Updated Teacher',
+            'username': 'updatedteacher',
+            'email': 'updated@example.test',
+        }
+
+        with patch.object(app_module, 'vercel_auth_enabled', return_value=False), patch.object(
+            app_module, 'get_google_credentials', return_value='credentials'
+        ), patch.object(
+            app_module.gspread, 'authorize', return_value=client
+        ), patch.dict(os.environ, {'GOOGLE_SHEET_ID': 'test-sheet-id'}):
+            synced, error = app_module.sync_teacher_profile_to_sheet(
+                user, profile, 'new-password'
+            )
+
+        self.assertTrue(synced)
+        self.assertEqual(error, '')
+        written_row = worksheet.update.call_args.kwargs['values'][0]
+        self.assertEqual(written_row[0:3], [
+            'Updated Teacher', 'updatedteacher', 'updated@example.test'
+        ])
+        from tools.generate_password_hash import verify_password_hash
+
+        self.assertTrue(verify_password_hash('new-password', written_row[3]))
+
+    def test_cloud_teacher_profile_sync_uses_authenticated_users_operation(self):
+        user = {
+            'full_name': 'Teacher',
+            'username': 'teacher',
+            'email': 'teacher@example.test',
+        }
+        profile = {
+            'full_name': 'Updated Teacher',
+            'username': 'updatedteacher',
+            'email': 'updated@example.test',
+        }
+        with patch.object(app_module, 'vercel_auth_enabled', return_value=True), patch.object(
+            app_module, 'call_google_function', return_value={'ok': True}
+        ) as update_profile:
+            synced, error = app_module.sync_teacher_profile_to_sheet(
+                user, profile, 'new-password'
+            )
+
+        self.assertTrue(synced)
+        self.assertEqual(error, '')
+        update_profile.assert_called_once_with(
+            'update_user_profile',
+            {
+                'full_name': 'Updated Teacher',
+                'username': 'updatedteacher',
+                'email': 'updated@example.test',
+                'password': 'new-password',
+            },
+        )
+
+    def test_teacher_profile_does_not_save_locally_when_users_sheet_sync_fails(self):
+        conn = app_module.get_db()
+        teacher = conn.execute(
+            "SELECT id, email FROM users WHERE role = 'teacher' ORDER BY id LIMIT 1"
+        ).fetchone()
+        conn.close()
+
+        with patch.object(
+            app_module,
+            'sync_teacher_profile_to_sheet',
+            return_value=(False, 'Users sheet unavailable.'),
+        ):
+            with app_module.app.test_client() as client:
+                with client.session_transaction() as sess:
+                    sess['user_id'] = teacher['id']
+                    sess['user_role'] = 'teacher'
+                response = client.post('/teacher/profile', data={
+                    'full_name': 'Unsaved Teacher',
+                    'username': 'unsavedteacher',
+                    'email': 'unsaved@example.test',
+                    'password': '',
+                })
+        self.assertEqual(response.status_code, 502)
+        self.assertIn(b'Users sheet unavailable.', response.data)
+        conn = app_module.get_db()
+        current = conn.execute(
+            'SELECT full_name, email FROM users WHERE id = ?', (teacher['id'],)
+        ).fetchone()
+        conn.close()
+        self.assertNotEqual(current['full_name'], 'Unsaved Teacher')
+        self.assertEqual(current['email'], teacher['email'])
 
     def test_upload_media_returns_local_and_drive_status(self):
         original = app_module.upload_to_google_drive
@@ -1536,7 +1703,7 @@ class AppFeatureTests(unittest.TestCase):
                     follow_redirects=True,
                 )
                 self.assertEqual(response.status_code, 200)
-                self.assertIn('Student updated and synced to the Google Sheets Student sheet.', response.get_data(as_text=True))
+                self.assertIn('Student updated and synced to the Google Sheets Users sheet.', response.get_data(as_text=True))
             sync_students.assert_called_once_with()
 
     def test_teacher_delete_practice_submission_updates_database_and_sheet(self):
@@ -1699,6 +1866,175 @@ class AppFeatureTests(unittest.TestCase):
             app_module.get_cloud_tokens(user['id']),
             {'access_token': 'signed-vercel-session'},
         )
+
+    def test_headteacher_cloud_login_reuses_canonical_username_and_merges_duplicate(self):
+        conn = app_module.get_db()
+        headteacher = conn.execute(
+            "SELECT id FROM users WHERE role = 'teacher' AND username = 'huynt' LIMIT 1"
+        ).fetchone()
+        duplicate = conn.execute(
+            'INSERT INTO users (full_name, username, email, password, role, class_name, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            ('Mr.Huy', 'huynt1', 'huynt@abc.com', 'local-secret', 'teacher', '', 1),
+        )
+        duplicate_id = conn.execute('SELECT last_insert_rowid() AS id').fetchone()['id']
+        lesson = conn.execute('SELECT id FROM lessons ORDER BY id LIMIT 1').fetchone()
+        conn.execute(
+            'INSERT INTO submissions (student_id, lesson_id, answer, score) VALUES (?, ?, ?, ?)',
+            (duplicate_id, lesson['id'], '{}', 80),
+        )
+        conn.commit()
+        headteacher_id = headteacher['id']
+        conn.close()
+        remote_account = {
+            'authenticated': True,
+            'uid': 'huynt@abc.com',
+            'email': 'huynt@abc.com',
+            'role': 'teacher',
+            'username': 'huynt',
+            'full_name': 'Mr.Huy',
+            'access_token': 'headteacher-session',
+        }
+
+        with patch.object(app_module, 'IS_FROZEN', True), patch.object(
+            app_module, 'call_vercel_api', return_value=remote_account
+        ):
+            with app_module.app.test_client() as client:
+                response = client.post('/login', data={
+                    'username': 'huynt',
+                    'password': '123456',
+                    'role': 'teacher',
+                })
+                self.assertEqual(response.status_code, 302)
+                with client.session_transaction() as browser_session:
+                    self.assertEqual(browser_session['user_id'], headteacher_id)
+
+        conn = app_module.get_db()
+        canonical = conn.execute(
+            'SELECT id, username, email FROM users WHERE id = ?', (headteacher_id,)
+        ).fetchone()
+        duplicate_left = conn.execute(
+            'SELECT id FROM users WHERE id = ?', (duplicate_id,)
+        ).fetchone()
+        moved_submission = conn.execute(
+            'SELECT student_id FROM submissions WHERE student_id = ?', (headteacher_id,)
+        ).fetchone()
+        conn.close()
+        self.assertEqual(canonical['username'], 'huynt')
+        self.assertEqual(canonical['email'], 'huynt@abc.com')
+        self.assertIsNone(duplicate_left)
+        self.assertIsNotNone(moved_submission)
+
+    def test_only_headteacher_can_access_teacher_account_management(self):
+        conn = app_module.get_db()
+        headteacher = conn.execute(
+            "SELECT id FROM users WHERE role = 'teacher' AND username = 'huynt' LIMIT 1"
+        ).fetchone()
+        teacher = conn.execute(
+            "SELECT id FROM users WHERE role = 'teacher' AND username != 'huynt' LIMIT 1"
+        ).fetchone()
+        conn.close()
+
+        with patch.object(app_module, 'read_teacher_accounts_from_sheet', return_value=[
+            {
+                'full_name': 'Mr.Huy',
+                'username': 'huynt',
+                'email': 'huynt@abc.com',
+                'class_name': '',
+                'status': 'active',
+                'is_active': True,
+            },
+        ]):
+            with app_module.app.test_client() as client:
+                with client.session_transaction() as browser_session:
+                    browser_session['user_id'] = headteacher['id']
+                    browser_session['user_role'] = 'teacher'
+                response = client.get('/teacher/accounts')
+                self.assertEqual(response.status_code, 200)
+                page = response.get_data(as_text=True)
+                self.assertIn('Teacher management', page)
+                self.assertIn('Head Teacher', page)
+                self.assertNotIn('password', page.lower())
+
+        with app_module.app.test_client() as client:
+            with client.session_transaction() as browser_session:
+                browser_session['user_id'] = teacher['id']
+                browser_session['user_role'] = 'teacher'
+            response = client.get('/teacher/accounts')
+            self.assertEqual(response.status_code, 302)
+
+    def test_teacher_account_management_creates_hashed_active_sheet_row(self):
+        worksheet = Mock()
+        worksheet.get_all_values.return_value = [
+            ['full_name', 'username', 'email', 'password', 'role', 'class_name', 'status'],
+            ['Head Teacher', 'huynt', 'head@example.test', 'head-hash', 'teacher', '', 'active'],
+        ]
+        with patch.object(app_module, 'vercel_auth_enabled', return_value=False), patch.object(
+            app_module, 'get_users_worksheet', return_value=worksheet
+        ):
+            synced, message = app_module.manage_teacher_account_in_sheet(
+                'create',
+                {
+                    'full_name': 'New Teacher',
+                    'username': 'newteacher',
+                    'email': 'newteacher@example.test',
+                    'password': 'teacher-password',
+                    'class_name': 'English',
+                },
+            )
+
+        self.assertTrue(synced)
+        self.assertEqual(message, '')
+        written_row = worksheet.append_row.call_args.args[0]
+        self.assertEqual(written_row[0:3], [
+            'New Teacher', 'newteacher', 'newteacher@example.test'
+        ])
+        self.assertEqual(written_row[4:7], ['teacher', 'English', 'active'])
+        from tools.generate_password_hash import verify_password_hash
+
+        self.assertTrue(verify_password_hash('teacher-password', written_row[3]))
+
+    def test_cloud_teacher_account_list_omits_password_and_exposes_active_state(self):
+        response = {
+            'ok': True,
+            'accounts': [
+                {
+                    'full_name': 'Teacher',
+                    'username': 'teacher1',
+                    'email': 'teacher1@example.test',
+                    'status': 'locked',
+                },
+            ],
+        }
+        with patch.object(app_module, 'vercel_auth_enabled', return_value=True), patch.object(
+            app_module, 'call_google_function', return_value=response
+        ) as call_google:
+            accounts = app_module.read_teacher_accounts_from_sheet()
+
+        self.assertEqual(len(accounts), 1)
+        self.assertFalse(accounts[0]['is_active'])
+        self.assertNotIn('password', accounts[0])
+        call_google.assert_called_once_with(
+            'manage_teacher_account',
+            {
+                'action': 'list',
+                'account': {},
+                'original_username': '',
+            },
+        )
+
+    def test_teacher_sidebar_link_is_hidden_from_regular_teachers(self):
+        conn = app_module.get_db()
+        teacher = conn.execute(
+            "SELECT id FROM users WHERE role = 'teacher' AND username != 'huynt' ORDER BY id LIMIT 1"
+        ).fetchone()
+        conn.close()
+        with app_module.app.test_client() as client:
+            with client.session_transaction() as browser_session:
+                browser_session['user_id'] = teacher['id']
+                browser_session['user_role'] = 'teacher'
+            response = client.get('/teacher/students')
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('>Teacher</span>', response.get_data(as_text=True))
 
     def test_login_form_accepts_username_and_password(self):
         with app_module.app.test_client() as client:

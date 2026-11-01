@@ -2,8 +2,8 @@
 
 Ứng dụng desktop Flask hỗ trợ học tiếng Anh. Mã nguồn lưu trong repo private
 `CVA`; GitHub Actions đóng gói ứng dụng Windows và đẩy bản phát hành sang repo
-public. Vercel chạy API phía server. Tài khoản được xác thực bằng thông tin
-trong tab `Student` hiện có.
+public. Vercel chạy API phía server. Tài khoản được xác thực bằng thông tin trong tab
+`Users`, nơi lưu cả tài khoản học sinh và giáo viên.
 
 Không commit `.env`, SQLite database, uploads, Google service-account JSON hoặc
 API key. Không đặt Gemini/Groq/Google private credentials trong EXE, mã nguồn,
@@ -22,27 +22,41 @@ py -m venv .venv
 `.env` chỉ dành cho phát triển cục bộ. `static/js/cloud-config.json` chỉ chứa
 URL Vercel công khai, không chứa API key.
 
+## Build ứng dụng Windows thành một file
+
+Trên Windows, cài dependencies trong `.venv`, sau đó chạy:
+
+```powershell
+.\.venv\Scripts\python.exe tools\build_windows.py
+```
+
+File đầu ra duy nhất là `dist\standalone\EngClassAI.exe`. Bản này không mở
+terminal; nó mở giao diện trong cửa sổ ứng dụng Edge/Chrome và dừng web server
+cục bộ khi cửa sổ ứng dụng đóng. Edge hoặc Chrome phải được cài trên máy.
+Icon Windows lấy từ `static/images/cva-logo.ico`.
+
 ## Backend, đăng nhập và dữ liệu
 
 - **Vercel Functions** xử lý xác thực, Gemini/Groq, Google Sheets và Drive.
   API key, Google service account, Sheet ID và Drive folder ID chỉ lưu trong
   Environment Variables của Vercel.
-- **Google Sheet `Student`** giữ tài khoản học sinh và giáo viên. Cần có cột
+- **Google Sheet `Users`** giữ tài khoản học sinh và giáo viên. Cần có cột
   `username`, `email`, `password`, `role`, `status`; cột `password` lưu scrypt
   hash, không lưu mật khẩu dạng rõ. Chạy `tools/generate_password_hash.py` để
   tạo hash scrypt. Bản Windows đóng gói không tự đăng ký tài khoản; giáo viên
-  thêm tài khoản vào Sheet `Student`, sau đó học sinh đăng nhập bằng tài khoản đó.
+  thêm tài khoản vào Sheet `Users`, sau đó người dùng đăng nhập bằng tài khoản đó.
 - **Ứng dụng Windows** giữ dữ liệu nghiệp vụ cục bộ trong SQLite. Khi đăng nhập,
-  Vercel tra username/email, hash mật khẩu, role và trạng thái trong `Student`.
+  Vercel tra username/email, hash mật khẩu, role và trạng thái trong `Users`.
   Ứng dụng tự tạo/cập nhật hồ sơ SQLite cục bộ từ tài khoản đã xác thực để lưu
   dữ liệu học tập; thông tin đăng nhập được quyết định bởi Sheet. Đồng bộ danh
-  sách không xóa cột mật khẩu hash hay dòng giáo viên.
+  sách hỗ trợ cả hai role và giữ mật khẩu hash. Thay đổi hồ sơ giáo viên trong
+  My Account được ghi ngược vào dòng tài khoản trong `Users`.
 - **Media** được tải trực tiếp từ Flask lên phiên tải lên resumable của Google
   Drive do Vercel cấp. Vercel chỉ lưu secret, xác nhận chủ sở hữu file, đặt
   quyền xem cho liên kết Drive và xử lý transcription.
 
 Xem [hướng dẫn Vercel và Google Sheet](docs/VERCEL_SETUP_VI.md) để cấu hình
-`Student`, API secrets và deploy. Xem [checklist phát hành](docs/RELEASE_SETUP_CHECKLIST.md)
+`Users`, API secrets và deploy. Xem [checklist phát hành](docs/RELEASE_SETUP_CHECKLIST.md)
 cho quy trình repo private → repo public → ứng dụng Windows.
 
 ## Repo mã nguồn private và repo phân phối public

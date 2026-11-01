@@ -104,6 +104,99 @@ def vercel_auth_enabled():
     return IS_FROZEN or auth_mode in {'vercel', 'cloud'}
 
 
+def is_headteacher(user):
+    return bool(
+        user
+        and str(user['role'] if hasattr(user, 'keys') else user.get('role', '')).strip().lower() == 'teacher'
+        and normalize_username(user['username'] if hasattr(user, 'keys') else user.get('username', '')) == 'huynt'
+    )
+
+
+@app.context_processor
+def inject_headteacher_navigation():
+    current_user = require_login()
+    return {'is_headteacher': is_headteacher(current_user)}
+
+
+def upsert_cloud_login_user(conn, login_result, role):
+    account_email = str(login_result.get('email') or '').strip().lower()
+    account_username = str(login_result.get('username') or '').strip()
+    account_name = str(login_result.get('full_name') or account_username).strip()
+    account_class = str(login_result.get('class_name') or '').strip()
+    user_by_email = conn.execute(
+        'SELECT * FROM users WHERE lower(email) = ? LIMIT 1',
+        (account_email,),
+    ).fetchone()
+    user_by_username = conn.execute(
+        'SELECT * FROM users WHERE lower(username) = ? AND role = ? ORDER BY id LIMIT 1',
+        (account_username.lower(), role),
+    ).fetchone() if account_username else None
+    headteacher_login = role == 'teacher' and normalize_username(account_username) == 'huynt'
+
+    user = user_by_username if headteacher_login and user_by_username else user_by_email
+    duplicate = None
+    if user_by_email and user_by_username and user_by_email['id'] != user_by_username['id']:
+        if headteacher_login and user_by_email['role'] == user_by_username['role'] == 'teacher':
+            user = user_by_username
+            duplicate = user_by_email
+        else:
+            user = user_by_email
+
+    if duplicate:
+        conn.execute(
+            'UPDATE submissions SET student_id = ? WHERE student_id = ?',
+            (user['id'], duplicate['id']),
+        )
+        conn.execute('DELETE FROM cloud_tokens WHERE user_id = ?', (duplicate['id'],))
+        conn.execute('DELETE FROM users WHERE id = ?', (duplicate['id'],))
+
+    if user:
+        conn.execute(
+            '''
+            UPDATE users
+            SET full_name = ?, username = ?, email = ?, role = ?, class_name = ?, is_active = 1
+            WHERE id = ?
+            ''',
+            (
+                account_name or account_email,
+                account_username or user['username'],
+                account_email,
+                role,
+                account_class or user['class_name'],
+                user['id'],
+            ),
+        )
+        return conn.execute('SELECT * FROM users WHERE id = ?', (user['id'],)).fetchone()
+
+    local_username = choose_unique_username(
+        conn,
+        account_username or account_name,
+        account_email,
+    )
+    conn.execute(
+        '''
+        INSERT INTO users
+            (full_name, username, email, password, role, class_name, is_active, total_points, average_score)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''',
+        (
+            account_name or account_email,
+            local_username,
+            account_email,
+            secrets.token_urlsafe(32),
+            role,
+            account_class,
+            1,
+            0,
+            0,
+        ),
+    )
+    return conn.execute(
+        'SELECT * FROM users WHERE lower(email) = ? LIMIT 1',
+        (account_email,),
+    ).fetchone()
+
+
 def call_vercel_api(endpoint, payload, access_token=None, timeout=30):
     if not VERCEL_API_BASE_URL or (endpoint != 'login' and not access_token):
         logger.warning('Vercel API call skipped: endpoint or session token is not configured.')
@@ -2483,6 +2576,7 @@ def get_google_credentials():
         return None
 
     service_account_json = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON', '').strip()
+    service_account_json_b64 = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON_B64', '').strip()
     service_account_path = os.getenv('GOOGLE_SERVICE_ACCOUNT_PATH', '').strip()
 
     scopes = [
@@ -2500,6 +2594,14 @@ def get_google_credentials():
         return next((candidate for candidate in candidates if candidate.is_file()), None)
 
     try:
+        if service_account_json_b64:
+            credentials_info = json.loads(
+                base64.b64decode(service_account_json_b64, validate=True).decode('utf-8')
+            )
+            return service_account.Credentials.from_service_account_info(
+                credentials_info,
+                scopes=scopes,
+            )
         if service_account_json:
             if service_account_json.startswith('{'):
                 return service_account.Credentials.from_service_account_info(json.loads(service_account_json), scopes=scopes)
@@ -2822,6 +2924,202 @@ def sync_teacher_profile_to_sheet(user, profile, password=''):
         return False, f'Could not update the Users sheet: {exc}'
 
 
+def get_users_worksheet():
+    credentials = get_google_credentials()
+    if not credentials:
+        raise RuntimeError('Google Sheets credentials are missing or invalid.')
+    client = gspread.authorize(credentials)
+    sheet_id = os.getenv('GOOGLE_SHEET_ID', '').strip()
+    if sheet_id:
+        spreadsheet = client.open_by_key(sheet_id)
+    else:
+        spreadsheet = client.open(os.getenv('GOOGLE_SHEET_NAME', 'EngClassAI'))
+    return spreadsheet.worksheet(USER_SHEET_NAME)
+
+
+def read_teacher_accounts_from_sheet():
+    if vercel_auth_enabled():
+        ok, accounts = manage_teacher_account_in_sheet('list')
+        if not ok:
+            raise RuntimeError(str(accounts))
+        return sorted(accounts, key=lambda account: account['full_name'].casefold())
+    else:
+        values = get_users_worksheet().get_all_values()
+        if not values:
+            raise RuntimeError('The Users sheet is empty.')
+        headers = values[0]
+        rows = [
+            {
+                header: row[index] if index < len(row) else ''
+                for index, header in enumerate(headers)
+            }
+            for row in values[1:]
+            if any(str(value).strip() for value in row)
+        ]
+
+    def normalized(row):
+        return {
+            re.sub(r'[^a-z0-9]', '', str(key).lower()): value
+            for key, value in row.items()
+        }
+
+    accounts = []
+    for row in rows:
+        values = normalized(row)
+        if str(values.get('role', '')).strip().lower() != 'teacher':
+            continue
+        account = {
+            'full_name': str(values.get('fullname') or values.get('name') or '').strip(),
+            'username': str(values.get('username') or '').strip(),
+            'email': str(values.get('email') or '').strip(),
+            'class_name': str(values.get('classname') or values.get('class') or '').strip(),
+            'status': str(values.get('status') or values.get('isactive') or 'active').strip().lower(),
+        }
+        account['is_active'] = account['status'] not in {'locked', 'inactive', '0', 'false', 'no'}
+        accounts.append(account)
+    return sorted(accounts, key=lambda account: account['full_name'].casefold())
+
+
+def manage_teacher_account_in_sheet(action, account=None, original_username=''):
+    account = account or {}
+    if vercel_auth_enabled():
+        result = call_google_function(
+            'manage_teacher_account',
+            {
+                'action': action,
+                'account': account,
+                'original_username': original_username,
+            },
+        )
+        if not result:
+            return False, 'The Users sheet could not be updated.'
+        if action == 'list':
+            accounts = result.get('accounts') or []
+            for teacher_account in accounts:
+                status = str(teacher_account.get('status') or 'active').strip().lower()
+                teacher_account['is_active'] = status not in {
+                    'locked', 'inactive', '0', 'false', 'no',
+                }
+            return True, accounts
+        return True, ''
+
+    try:
+        worksheet = get_users_worksheet()
+        values = worksheet.get_all_values()
+        if not values:
+            return False, 'The Users sheet is empty.'
+        headers = [str(header).strip() for header in values[0]]
+        normalized_headers = {
+            re.sub(r'[^a-z0-9]', '', header.lower()): index
+            for index, header in enumerate(headers)
+        }
+
+        def column(*names):
+            return next(
+                (normalized_headers[name] for name in names if name in normalized_headers),
+                None,
+            )
+
+        name_index = column('fullname', 'name')
+        username_index = column('username', 'userid')
+        email_index = column('email', 'emailaddress')
+        password_index = column('passwordhash', 'hashedpassword', 'password')
+        role_index = column('role', 'accountrole')
+        class_index = column('classname', 'class')
+        status_index = column('status', 'accountstatus', 'isactive')
+        if None in (name_index, username_index, email_index, password_index, role_index):
+            return False, 'The Users sheet needs full_name, username, email, password, and role columns.'
+
+        def read_row(row):
+            return [row[index] if index < len(row) else '' for index in range(len(headers))]
+
+        matches = []
+        for row_number, row in enumerate(values[1:], start=2):
+            current = read_row(row)
+            if (
+                str(current[role_index]).strip().lower() == 'teacher'
+                and str(current[username_index]).strip().casefold()
+                == original_username.strip().casefold()
+            ):
+                matches.append((row_number, current))
+        if action == 'list':
+            ok, accounts = True, read_teacher_accounts_from_sheet()
+            return ok, accounts
+        if action == 'create':
+            username = str(account.get('username') or '').strip()
+            email = str(account.get('email') or '').strip().lower()
+            if not username or not email or not str(account.get('full_name') or '').strip():
+                return False, 'Name, username, and email are required.'
+            if any(
+                str(row[username_index] if username_index < len(row) else '').strip().casefold() == username.casefold()
+                or str(row[email_index] if email_index < len(row) else '').strip().casefold() == email
+                for row in values[1:]
+            ):
+                return False, 'That username or email address is already in use.'
+            if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email):
+                return False, 'Enter a valid email address.'
+            new_row = [''] * len(headers)
+            new_row[name_index] = str(account['full_name']).strip()
+            new_row[username_index] = username
+            new_row[email_index] = email
+            new_row[password_index] = hash_password_for_sheet(str(account.get('password') or '123456'))
+            new_row[role_index] = 'teacher'
+            if class_index is not None:
+                new_row[class_index] = str(account.get('class_name') or '').strip()
+            if status_index is not None:
+                new_row[status_index] = 'active'
+            worksheet.append_row(new_row, value_input_option='RAW')
+            return True, ''
+
+        if len(matches) != 1:
+            return False, 'The teacher account could not be uniquely found in the Users sheet.'
+        row_number, current = matches[0]
+        if normalize_username(original_username) == 'huynt':
+            return False, 'The headteacher account cannot be changed from the Teacher management page.'
+
+        if action == 'delete':
+            worksheet.delete_rows(row_number)
+            return True, ''
+        if action == 'toggle':
+            if status_index is None:
+                return False, 'The Users sheet must contain a status column.'
+            current_status = str(current[status_index]).strip().lower()
+            current[status_index] = 'locked' if current_status in {'active', 'true', '1', 'yes'} else 'active'
+        elif action == 'update':
+            username = str(account.get('username') or '').strip()
+            email = str(account.get('email') or '').strip().lower()
+            full_name = str(account.get('full_name') or '').strip()
+            if not full_name or not username or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email):
+                return False, 'Enter a valid name, username, and email address.'
+            for candidate_row_number, candidate in enumerate(values[1:], start=2):
+                if candidate_row_number == row_number:
+                    continue
+                if (
+                    str(candidate[username_index] if username_index < len(candidate) else '').strip().casefold() == username.casefold()
+                    or str(candidate[email_index] if email_index < len(candidate) else '').strip().casefold() == email
+                ):
+                    return False, 'That username or email address is already in use.'
+            current[name_index] = full_name
+            current[username_index] = username
+            current[email_index] = email
+            if class_index is not None:
+                current[class_index] = str(account.get('class_name') or '').strip()
+            new_password = str(account.get('password') or '')
+            if new_password:
+                current[password_index] = hash_password_for_sheet(new_password)
+        else:
+            return False, 'Unsupported teacher account action.'
+        worksheet.update(
+            values=[current],
+            range_name=f'A{row_number}',
+            value_input_option='RAW',
+        )
+        return True, ''
+    except Exception as exc:
+        logger.exception('Failed to manage a teacher account in the Users sheet.')
+        return False, f'Could not update the Users sheet: {exc}'
+
+
 def sync_lessons_to_sheet(rows=None):
     try:
         if rows is None:
@@ -2943,50 +3241,7 @@ def login():
                 ), 401
 
             conn = get_db()
-            user = conn.execute(
-                'SELECT * FROM users WHERE lower(email) = ? LIMIT 1',
-                (account_email,),
-            ).fetchone()
-            if not user:
-                account_username = (
-                    str((login_result or {}).get('username') or raw_input).strip()
-                )
-                account_name = (
-                    str((login_result or {}).get('full_name') or account_username).strip()
-                )
-                account_class = str((login_result or {}).get('class_name') or '').strip()
-                local_username = choose_unique_username(
-                    conn,
-                    account_username or account_name,
-                    account_email,
-                )
-                conn.execute(
-                    'INSERT INTO users (full_name, username, email, password, role, class_name, is_active, total_points, average_score) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                    (
-                        account_name or account_email,
-                        local_username,
-                        account_email,
-                        secrets.token_urlsafe(32),
-                        role,
-                        account_class,
-                        1,
-                        0,
-                        0,
-                    ),
-                )
-                user = conn.execute(
-                    'SELECT * FROM users WHERE lower(email) = ? LIMIT 1',
-                    (account_email,),
-                ).fetchone()
-            elif user['role'] != role or user['is_active'] == 0:
-                conn.execute(
-                    'UPDATE users SET role = ?, is_active = 1 WHERE id = ?',
-                    (role, user['id']),
-                )
-                user = conn.execute(
-                    'SELECT * FROM users WHERE id = ?',
-                    (user['id'],),
-                ).fetchone()
+            user = upsert_cloud_login_user(conn, login_result or {}, role)
             conn.commit()
             conn.close()
             if not save_cloud_token(user['id'], access_token):
@@ -3887,6 +4142,188 @@ def teacher_students():
     session.pop('google_sync_warning', None)
     session.pop('google_sync_success', None)
     return render_template('teacher_students.html', user=user, students=student_rows, page=page, total_pages=total_pages, per_page=per_page, page_size_options=PAGE_SIZE_OPTIONS, total_items=total_students, warning=warning, sync_success=sync_success, student_created_success=student_created_success, search_field=search_field, search_query=search_query)
+
+
+@app.route('/teacher/accounts')
+def teacher_accounts():
+    user = require_login()
+    if not is_headteacher(user):
+        return redirect(url_for('dashboard') if user else url_for('login'))
+    try:
+        accounts = read_teacher_accounts_from_sheet()
+    except Exception as exc:
+        logger.exception('Could not load teacher accounts for headteacher.')
+        accounts = []
+        set_session_message('teacher_accounts_error', str(exc))
+
+    search_query = request.args.get('q', '').strip().casefold()
+    if search_query:
+        accounts = [
+            account for account in accounts
+            if search_query in account['full_name'].casefold()
+            or search_query in account['username'].casefold()
+            or search_query in account['email'].casefold()
+        ]
+    page = max(1, request.args.get('page', default=1, type=int) or 1)
+    per_page = get_page_size()
+    total_items = len(accounts)
+    total_pages = max(1, (total_items + per_page - 1) // per_page)
+    page = min(page, total_pages)
+    start = (page - 1) * per_page
+    warning = session.pop('teacher_accounts_error', None) or session.pop('teacher_accounts_notice', None)
+    success = session.pop('teacher_accounts_success', False)
+    return render_template(
+        'teacher_accounts.html',
+        user=user,
+        accounts=accounts[start:start + per_page],
+        page=page,
+        total_pages=total_pages,
+        per_page=per_page,
+        page_size_options=PAGE_SIZE_OPTIONS,
+        total_items=total_items,
+        search_query=search_query,
+        warning=warning,
+        sync_success=success,
+    )
+
+
+@app.route('/teacher/accounts/new', methods=['GET', 'POST'])
+def teacher_account_new():
+    user = require_login()
+    if not is_headteacher(user):
+        return redirect(url_for('dashboard') if user else url_for('login'))
+    account = {
+        'full_name': '',
+        'username': '',
+        'email': '',
+        'class_name': '',
+    }
+    if request.method == 'POST':
+        account = {
+            'full_name': request.form.get('full_name', '').strip(),
+            'username': normalize_username(request.form.get('username', '')),
+            'email': request.form.get('email', '').strip().lower(),
+            'class_name': request.form.get('class_name', '').strip(),
+            'password': request.form.get('password', '').strip() or '123456',
+        }
+        if not account['full_name'] or not account['username'] or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', account['email']):
+            return render_template(
+                'teacher_account_edit.html',
+                user=user,
+                account=account,
+                is_new=True,
+                error='Enter a valid name, username, and email address.',
+            ), 400
+        synced, message = manage_teacher_account_in_sheet('create', account)
+        if not synced:
+            return render_template(
+                'teacher_account_edit.html',
+                user=user,
+                account=account,
+                is_new=True,
+                error=message,
+            ), 400
+        session['teacher_accounts_notice'] = 'Teacher account created and synced to the Users sheet.'
+        session['teacher_accounts_success'] = True
+        return redirect(url_for('teacher_accounts'))
+    return render_template(
+        'teacher_account_edit.html',
+        user=user,
+        account=account,
+        is_new=True,
+        error=None,
+    )
+
+
+@app.route('/teacher/accounts/<username>/edit', methods=['GET', 'POST'])
+def teacher_account_edit(username):
+    user = require_login()
+    if not is_headteacher(user):
+        return redirect(url_for('dashboard') if user else url_for('login'))
+    if normalize_username(username) == 'huynt':
+        return redirect(url_for('teacher_accounts'))
+    try:
+        accounts = read_teacher_accounts_from_sheet()
+    except Exception as exc:
+        logger.exception('Could not load teacher account for editing.')
+        abort(502, description='Could not read the Users sheet.')
+    account = next(
+        (item for item in accounts if item['username'].casefold() == username.casefold()),
+        None,
+    )
+    if not account:
+        abort(404)
+    if request.method == 'POST':
+        updated = {
+            'full_name': request.form.get('full_name', '').strip(),
+            'username': normalize_username(request.form.get('username', '')),
+            'email': request.form.get('email', '').strip().lower(),
+            'class_name': request.form.get('class_name', '').strip(),
+            'password': request.form.get('password', '').strip(),
+        }
+        if not updated['full_name'] or not updated['username'] or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', updated['email']):
+            return render_template(
+                'teacher_account_edit.html',
+                user=user,
+                account={**account, **updated},
+                is_new=False,
+                error='Enter a valid name, username, and email address.',
+            ), 400
+        synced, message = manage_teacher_account_in_sheet(
+            'update',
+            updated,
+            original_username=account['username'],
+        )
+        if not synced:
+            return render_template(
+                'teacher_account_edit.html',
+                user=user,
+                account={**account, **updated},
+                is_new=False,
+                error=message,
+            ), 400
+        session['teacher_accounts_notice'] = 'Teacher account updated and synced to the Users sheet.'
+        session['teacher_accounts_success'] = True
+        return redirect(url_for('teacher_accounts'))
+    return render_template(
+        'teacher_account_edit.html',
+        user=user,
+        account=account,
+        is_new=False,
+        error=None,
+    )
+
+
+@app.route('/teacher/accounts/<username>/toggle', methods=['POST'])
+def teacher_account_toggle(username):
+    user = require_login()
+    if not is_headteacher(user):
+        return redirect(url_for('dashboard') if user else url_for('login'))
+    synced, message = manage_teacher_account_in_sheet(
+        'toggle', original_username=username
+    )
+    session['teacher_accounts_notice'] = (
+        'Teacher account status updated in the Users sheet.'
+        if synced else message
+    )
+    session['teacher_accounts_success'] = synced
+    return redirect(url_for('teacher_accounts'))
+
+
+@app.route('/teacher/accounts/<username>/delete', methods=['POST'])
+def teacher_account_delete(username):
+    user = require_login()
+    if not is_headteacher(user):
+        return redirect(url_for('dashboard') if user else url_for('login'))
+    synced, message = manage_teacher_account_in_sheet(
+        'delete', original_username=username
+    )
+    session['teacher_accounts_notice'] = (
+        'Teacher account deleted from the Users sheet.'
+        if synced else message
+    )
+    session['teacher_accounts_success'] = synced
+    return redirect(url_for('teacher_accounts'))
 
 
 @app.route('/teacher/student/new', methods=['GET', 'POST'])

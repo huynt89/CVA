@@ -1,4 +1,4 @@
-pyimport argparse
+import argparse
 import getpass
 import os
 import re
@@ -23,12 +23,12 @@ def normalize_header(value):
 
 def build_password_updates(rows, usernames, password=DEFAULT_PASSWORD):
     if not rows:
-        raise ValueError("The Student worksheet is empty.")
+        raise ValueError("The Users worksheet is empty.")
     headers = [normalize_header(value) for value in rows[0]]
     username_index = headers.index("username") if "username" in headers else -1
     password_index = headers.index("password") if "password" in headers else -1
     if username_index < 0 or password_index < 0:
-        raise ValueError("The Student worksheet must contain username and password columns.")
+        raise ValueError("The Users worksheet must contain username and password columns.")
 
     requested = list(dict.fromkeys(value.strip().casefold() for value in usernames if value.strip()))
     if not requested:
@@ -81,9 +81,9 @@ def load_credentials(env):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Set selected Student accounts to the default password and store only scrypt hashes."
+        description="Set selected Users accounts to the default password and store only scrypt hashes."
     )
-    parser.add_argument("usernames", nargs="+", help="Exact usernames to update in the Student sheet")
+    parser.add_argument("usernames", nargs="+", help="Exact usernames to update in the Users sheet")
     parser.add_argument(
         "--custom-password",
         action="store_true",
@@ -110,14 +110,14 @@ def main():
     try:
         credentials = load_credentials(env)
         spreadsheet = gspread.authorize(credentials).open_by_key(spreadsheet_id)
-        worksheet = spreadsheet.worksheet("Student")
+        worksheet = spreadsheet.worksheet("Users")
         updates = build_password_updates(
             worksheet.get_all_values(),
             args.usernames,
             password=password,
         )
     except Exception as error:
-        raise SystemExit(f"Could not prepare Student password updates: {error}") from error
+        raise SystemExit(f"Could not prepare Users password updates: {error}") from error
 
     print(f"Accounts to update: {', '.join(args.usernames)}")
     if args.custom_password:

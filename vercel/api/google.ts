@@ -187,6 +187,170 @@ async function updateTeacherProfile(user: AuthenticatedUser, body: Record<string
   return { updated: true };
 }
 
+async function manageTeacherAccount(user: AuthenticatedUser, body: Record<string, unknown>) {
+  requireTeacher(user);
+  const sheets = sheetsClient();
+  const spreadsheetId = sheetId();
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `'${usersSheetName}'!A:AZ`,
+  });
+  const values = response.data.values ?? [];
+  if (values.length < 2) throw new HttpError(404, "The Users worksheet has no teacher accounts.");
+  const headers = values[0].map(normalizeHeader);
+  const columnIndex = (...names: string[]) => headers.findIndex((header) => names.includes(header));
+  const nameIndex = columnIndex("fullname", "name");
+  const usernameIndex = columnIndex("username", "userid");
+  const emailIndex = columnIndex("email", "emailaddress");
+  const passwordIndex = columnIndex("passwordhash", "hashedpassword", "password");
+  const roleIndex = columnIndex("role", "accountrole");
+  const classIndex = columnIndex("classname", "class");
+  const statusIndex = columnIndex("status", "accountstatus", "isactive");
+  if ([nameIndex, usernameIndex, emailIndex, passwordIndex, roleIndex].some((index) => index < 0)) {
+    throw new HttpError(503, "The Users worksheet must contain full_name, username, email, password, and role columns.");
+  }
+  const rows = values.slice(1).map((cells, index) => ({
+    cells,
+    rowNumber: index + 2,
+    username: normalizeAccountValue(cells[usernameIndex]),
+    email: normalizeAccountValue(cells[emailIndex]),
+    role: normalizeAccountValue(cells[roleIndex]),
+  }));
+  const headteacherRows = rows.filter((row) =>
+    row.role === "teacher"
+    && row.username === "huynt"
+    && row.email === user.email.toLowerCase());
+  if (user.role !== "teacher" || headteacherRows.length !== 1) {
+    throw new HttpError(403, "Head Teacher access is required.");
+  }
+
+  const action = typeof body.action === "string" ? body.action : "";
+  const sourceAccount = body.account && typeof body.account === "object"
+    ? body.account as Record<string, unknown>
+    : {};
+  const fullName = typeof sourceAccount.full_name === "string" ? sourceAccount.full_name.trim() : "";
+  const username = typeof sourceAccount.username === "string" ? sourceAccount.username.trim() : "";
+  const email = typeof sourceAccount.email === "string" ? sourceAccount.email.trim().toLowerCase() : "";
+  const className = typeof sourceAccount.class_name === "string" ? sourceAccount.class_name.trim() : "";
+  const password = typeof sourceAccount.password === "string" ? sourceAccount.password : "";
+  const originalUsername = typeof body.original_username === "string"
+    ? normalizeAccountValue(body.original_username)
+    : "";
+  const targetRows = rows.filter((row) =>
+    row.role === "teacher" && row.username === originalUsername);
+  if (action === "list") {
+    return {
+      accounts: rows.filter((row) => row.role === "teacher").map(({ cells }) => ({
+        full_name: String(cells[nameIndex] ?? ""),
+        username: String(cells[usernameIndex] ?? ""),
+        email: String(cells[emailIndex] ?? ""),
+        class_name: classIndex >= 0 ? String(cells[classIndex] ?? "") : "",
+        status: statusIndex >= 0 ? String(cells[statusIndex] ?? "active") : "active",
+      })),
+    };
+  }
+
+  if (action === "create") {
+    if (
+      !fullName || fullName.length > 200
+      || !/^[\p{L}\p{N}._-]{1,120}$/u.test(username)
+      || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+      || password.length > 256
+    ) {
+      throw new HttpError(400, "Enter a valid name, username, and email address.");
+    }
+    if (rows.some((row) => row.username === username.toLowerCase() || row.email === email)) {
+      throw new HttpError(409, "That username or email address is already in use.");
+    }
+    const newRow = Array(headers.length).fill("");
+    newRow[nameIndex] = fullName;
+    newRow[usernameIndex] = username;
+    newRow[emailIndex] = email;
+    newRow[passwordIndex] = createPasswordHash(password || "123456");
+    newRow[roleIndex] = "teacher";
+    if (classIndex >= 0) newRow[classIndex] = className;
+    if (statusIndex >= 0) newRow[statusIndex] = "active";
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `'${usersSheetName}'!A:AZ`,
+      valueInputOption: "RAW",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: { majorDimension: "ROWS", values: [newRow] },
+    });
+    return { updated: true };
+  }
+
+  if (targetRows.length !== 1) {
+    throw new HttpError(404, "The teacher account could not be uniquely found.");
+  }
+  const target = targetRows[0];
+  if (target.username === "huynt") {
+    throw new HttpError(403, "The Head Teacher account cannot be changed from this page.");
+  }
+  if (action === "delete") {
+    const metadata = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: "sheets(properties(sheetId,title))",
+    });
+    const worksheet = metadata.data.sheets?.find((sheet) => sheet.properties?.title === usersSheetName);
+    const numericSheetId = worksheet?.properties?.sheetId;
+    if (numericSheetId === undefined) throw new HttpError(503, "The Users worksheet could not be located.");
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{
+          deleteDimension: {
+            range: {
+              sheetId: numericSheetId,
+              dimension: "ROWS",
+              startIndex: target.rowNumber - 1,
+              endIndex: target.rowNumber,
+            },
+          },
+        }],
+      },
+    });
+    return { updated: true };
+  }
+
+  const updatedRow = [...target.cells];
+  while (updatedRow.length < headers.length) updatedRow.push("");
+  if (action === "toggle") {
+    if (statusIndex < 0) throw new HttpError(503, "The Users worksheet has no status column.");
+    const currentStatus = normalizeAccountValue(updatedRow[statusIndex]);
+    updatedRow[statusIndex] = ["active", "true", "1", "yes"].includes(currentStatus)
+      ? "locked"
+      : "active";
+  } else if (action === "update") {
+    if (
+      !fullName || fullName.length > 200
+      || !/^[\p{L}\p{N}._-]{1,120}$/u.test(username)
+      || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+      || password.length > 256
+    ) {
+      throw new HttpError(400, "Enter a valid name, username, and email address.");
+    }
+    if (rows.some((row) => row.rowNumber !== target.rowNumber
+      && (row.username === username.toLowerCase() || row.email === email))) {
+      throw new HttpError(409, "That username or email address is already in use.");
+    }
+    updatedRow[nameIndex] = fullName;
+    updatedRow[usernameIndex] = username;
+    updatedRow[emailIndex] = email;
+    if (classIndex >= 0) updatedRow[classIndex] = className;
+    if (password) updatedRow[passwordIndex] = createPasswordHash(password);
+  } else {
+    throw new HttpError(400, "Unsupported teacher account action.");
+  }
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `'${usersSheetName}'!A${target.rowNumber}`,
+    valueInputOption: "RAW",
+    requestBody: { majorDimension: "ROWS", values: [updatedRow] },
+  });
+  return { updated: true };
+}
+
 async function upsertStudentPractice(user: AuthenticatedUser, body: Record<string, unknown>) {
   if (user.role !== "student") throw new HttpError(403, "Student access is required.");
   const headers = Array.isArray(body.headers) ? body.headers.map(String) : [];
@@ -254,6 +418,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     if (operation === "update_user_profile") {
       const result = await updateTeacherProfile(user, body ?? {});
+      res.status(200).json({ ok: true, ...result });
+      return;
+    }
+    if (operation === "manage_teacher_account") {
+      const result = await manageTeacherAccount(user, body ?? {});
       res.status(200).json({ ok: true, ...result });
       return;
     }

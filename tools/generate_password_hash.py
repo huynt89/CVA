@@ -62,7 +62,7 @@ def generate():
 
 
 def verify():
-    encoded = getpass.getpass('Paste the Student sheet scrypt hash (input hidden): ')
+    encoded = getpass.getpass('Paste the Users sheet scrypt hash (input hidden): ')
     password = getpass.getpass('Enter the password you are trying to use (input hidden): ')
     if verify_password_hash(password, encoded):
         print('MATCH: this password matches the pasted hash.')
@@ -71,7 +71,7 @@ def verify():
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Create or verify a Student sheet scrypt password hash.')
+    parser = argparse.ArgumentParser(description='Create or verify a Users sheet scrypt password hash.')
     parser.add_argument(
         'action',
         choices=('generate', 'verify'),

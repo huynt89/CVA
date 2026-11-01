@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teacher management</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="app-shell teacher-workspace-shell">
+        <aside class="sidebar">
+            <button class="sidebar-toggle" type="button" aria-label="Toggle sidebar">☰</button>
+            <div class="logo-wrap">
+                <span class="logo-mark"><img src="{{ url_for('static', filename='images/cva-logo.png') }}" alt="CVA logo"></span>
+                <span class="logo-text">CVA Let's speak!</span>
+            </div>
+            <nav>
+                <a href="{{ url_for('dashboard') }}"><span class="nav-icon">🏠</span><span class="nav-label">{{ t('dashboard') }}</span></a>
+                <a href="{{ url_for('teacher_students') }}"><span class="nav-icon">👥</span><span class="nav-label">{{ t('student') }}</span></a>
+                <a class="active" href="{{ url_for('teacher_accounts') }}"><span class="nav-icon">🧑‍🏫</span><span class="nav-label">Teacher</span></a>
+                <a href="{{ url_for('teacher_lessons') }}"><span class="nav-icon">📘</span><span class="nav-label">{{ t('lessons') }}</span></a>
+                <a href="{{ url_for('practice_page') }}"><span class="nav-icon">🎤</span><span class="nav-label">Practice</span></a>
+                <a href="{{ url_for('teacher_profile') }}"><span class="nav-icon">👤</span><span class="nav-label">My account</span></a>
+                <a href="{{ url_for('logout') }}"><span class="nav-icon">⎋</span><span class="nav-label">{{ t('logout') }}</span></a>
+            </nav>
+            <div class="language-switcher sidebar-lang">
+                <button type="button" data-lang="vi" class="lang-btn {% if lang == 'vi' %}active{% endif %}">VI</button>
+                <button type="button" data-lang="en" class="lang-btn {% if lang == 'en' %}active{% endif %}">EN</button>
+            </div>
+        </aside>
+
+        <main class="main-panel">
+            <header class="topbar">
+                <div>
+                    <h2>Teacher management</h2>
+                    <p>Manage teacher accounts in the Users sheet.</p>
+                </div>
+                <div class="user-box">{{ user.full_name }}</div>
+            </header>
+
+            {% if warning %}
+            <section class="card wide-card">
+                <div class="alert-box {{ 'success-box' if sync_success else 'warning-box' }}" role="status">{{ warning }}</div>
+            </section>
+            {% endif %}
+
+            <section class="card wide-card">
+                <div class="card-header list-card-toolbar">
+                    <h3>Teacher</h3>
+                    <div class="table-actions">
+                        <a class="primary-btn" href="{{ url_for('teacher_account_new') }}">+ Add teacher</a>
+                        <form method="GET" action="{{ url_for('teacher_accounts') }}" class="list-search-form">
+                            <label class="mini-label" for="teacher-search-field">Search</label>
+                            <input id="teacher-search-field" type="search" name="q" class="form-control search-query-input" value="{{ search_query }}" placeholder="Name, username, or email">
+                            <input type="hidden" name="per_page" value="{{ per_page }}">
+                            <button class="primary-btn" type="submit">Search</button>
+                            {% if search_query %}<a class="mini-btn" href="{{ url_for('teacher_accounts', per_page=per_page) }}">Clear</a>{% endif %}
+                        </form>
+                    </div>
+                </div>
+
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>Name</th><th>Username</th><th>Email</th><th>Class</th><th>Status</th><th>Action</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for account in accounts %}
+                            <tr>
+                                <td>{{ account.full_name }}</td>
+                                <td>{{ account.username }}</td>
+                                <td>{{ account.email }}</td>
+                                <td>{{ account.class_name or '—' }}</td>
+                                <td>{{ 'Active' if account.is_active else 'Locked' }}</td>
+                                <td>
+                                    {% if account.username|lower == 'huynt' %}
+                                    <span class="account-role-badge">Head Teacher</span>
+                                    {% else %}
+                                    <div class="row-actions compact-icon-actions">
+                                        <a class="icon-action-btn edit-icon-btn" href="{{ url_for('teacher_account_edit', username=account.username) }}" title="Edit teacher" aria-label="Edit teacher">✎</a>
+                                        <form method="POST" action="{{ url_for('teacher_account_toggle', username=account.username) }}" style="display:inline;">
+                                            <button class="icon-action-btn edit-icon-btn" type="submit" title="{{ 'Lock teacher' if account.is_active else 'Unlock teacher' }}" aria-label="{{ 'Lock teacher' if account.is_active else 'Unlock teacher' }}">{{ '🔒' if account.is_active else '🔓' }}</button>
+                                        </form>
+                                        <form method="POST" action="{{ url_for('teacher_account_delete', username=account.username) }}" style="display:inline;" onsubmit="return confirm('Delete this teacher account from Users?');">
+                                            <button class="icon-action-btn delete-icon-btn" type="submit" title="Delete teacher" aria-label="Delete teacher">🗑</button>
+                                        </form>
+                                    </div>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="6">No teacher accounts found in the Users sheet.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="pagination">
+                    <form method="GET" action="{{ url_for('teacher_accounts') }}" class="page-size-form">
+                        <label for="teacher-page-size">Rows per page</label>
+                        <select id="teacher-page-size" name="per_page" onchange="this.form.submit()">
+                            {% for size in page_size_options %}<option value="{{ size }}" {% if size == per_page %}selected{% endif %}>{{ size }}</option>{% endfor %}
+                        </select>
+                        <input type="hidden" name="q" value="{{ search_query }}">
+                    </form>
+                    <span>Page <strong>{{ page }}</strong> of <strong>{{ total_pages }}</strong> · {{ total_items }} teachers</span>
+                    <div class="page-actions">
+                        {% if page > 1 %}<a href="{{ url_for('teacher_accounts', page=page-1, per_page=per_page, q=search_query) }}" class="page-btn page-nav-btn">← Previous</a>{% endif %}
+                        {% if page < total_pages %}<a href="{{ url_for('teacher_accounts', page=page+1, per_page=per_page, q=search_query) }}" class="page-btn page-nav-btn">Next →</a>{% endif %}
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
