@@ -35,9 +35,6 @@
                 {% if error %}
                     <div class="alert-box" role="alert">{{ error }}</div>
                 {% endif %}
-                {% if is_frozen and not show_register and not warning %}
-                    <div class="alert-box" role="status">New accounts are managed by your teacher in the Student sheet.</div>
-                {% endif %}
 
                 {% if not show_register %}
                     <form method="POST" action="{{ url_for('login') }}">
