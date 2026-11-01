@@ -60,13 +60,13 @@
                 {% else %}
                     <form method="POST" action="{{ url_for('register') }}">
                         <label for="register-full-name">{{ t('full_name') }}</label>
-                        <input id="register-full-name" type="text" name="full_name" autocomplete="name" placeholder="Lan Nguyen" required>
+                        <input id="register-full-name" type="text" name="full_name" autocomplete="name" required>
 
                         <label for="register-username">Username</label>
-                        <input id="register-username" type="text" name="username" autocomplete="username" placeholder="lannguyen" required>
+                        <input id="register-username" type="text" name="username" autocomplete="username" required>
 
                         <label for="register-email">{{ t('email') }}</label>
-                        <input id="register-email" type="email" name="email" autocomplete="email" placeholder="student@school.com" required>
+                        <input id="register-email" type="email" name="email" autocomplete="email" required>
 
                         <label for="register-password">{{ t('password') }}</label>
                         <input id="register-password" type="password" name="password" autocomplete="new-password" placeholder="••••••" required>

@@ -1841,7 +1841,9 @@ class AppFeatureTests(unittest.TestCase):
                 'role': 'teacher',
                 'access_token': 'signed-vercel-session',
             },
-        ) as remote_login:
+        ) as remote_login, patch.object(
+            app_module, 'load_google_sheet_data_on_first_teacher_login'
+        ):
             with app_module.app.test_client() as client:
                 response = client.post(
                     '/login',
@@ -1976,6 +1978,8 @@ class AppFeatureTests(unittest.TestCase):
 
         with patch.object(app_module, 'IS_FROZEN', True), patch.object(
             app_module, 'call_vercel_api', return_value=remote_account
+        ), patch.object(
+            app_module, 'load_google_sheet_data_on_first_teacher_login'
         ):
             with app_module.app.test_client() as client:
                 response = client.post('/login', data={
@@ -2034,7 +2038,7 @@ class AppFeatureTests(unittest.TestCase):
                 self.assertNotIn('Head Teacher', page)
                 self.assertNotIn('password', page.lower())
                 self.assertIn('Sync Teacher list with Google Sheets', page)
-                self.assertIn('🧑‍🏫', page)
+                self.assertIn('👩‍🏫', page)
 
         with app_module.app.test_client() as client:
             with client.session_transaction() as browser_session:
@@ -2164,7 +2168,11 @@ class AppFeatureTests(unittest.TestCase):
         }
         with patch.object(app_module, 'IS_FROZEN', True), patch.object(
             app_module, 'call_vercel_api', return_value=remote_account
-        ), patch.object(app_module, 'read_teacher_accounts_from_sheet', return_value=[]):
+        ), patch.object(
+            app_module, 'read_teacher_accounts_from_sheet', return_value=[]
+        ), patch.object(
+            app_module, 'load_google_sheet_data_on_first_teacher_login'
+        ):
             with app_module.app.test_client() as client:
                 login_response = client.post('/login', data={
                     'username': 'director',
@@ -2181,8 +2189,99 @@ class AppFeatureTests(unittest.TestCase):
 
         self.assertEqual(page_response.status_code, 200)
         page = page_response.get_data(as_text=True)
-        self.assertIn('href="/teacher/accounts"><span class="nav-label">Teacher</span>', page)
-        self.assertNotIn('🧑‍🏫', page)
+        self.assertIn('href="/teacher/accounts"><span class="nav-icon">👩‍🏫</span><span class="nav-label">Teacher</span>', page)
+
+    def test_first_cloud_teacher_login_loads_google_data_once(self):
+        remote_account = {
+            'authenticated': True,
+            'uid': 'sync-teacher@example.test',
+            'email': 'sync-teacher@example.test',
+            'role': 'teacher',
+            'is_headteacher': False,
+            'username': 'syncteacher',
+            'full_name': 'Sync Teacher',
+            'access_token': 'sync-teacher-token',
+        }
+
+        def read_sheet(sheet_name):
+            app_module._GOOGLE_SHEET_READ_STATUS[sheet_name.lower()] = True
+            return [{'loaded_from': sheet_name}]
+
+        with patch.object(app_module, 'IS_FROZEN', True), patch.object(
+            app_module, 'call_vercel_api', return_value=remote_account
+        ), patch.object(
+            app_module, '_read_google_worksheet_rows', side_effect=read_sheet
+        ) as read_rows, patch.object(
+            app_module, 'sync_google_students_into_db', return_value=[{'id': 1}]
+        ) as sync_users, patch.object(
+            app_module, 'sync_google_lessons_into_db', return_value=[{'id': 2}]
+        ) as sync_lessons, patch.object(
+            app_module, 'sync_google_practice_into_db', return_value=[{'id': 3}]
+        ) as sync_practice:
+            with app_module.app.test_client() as client:
+                first_login = client.post('/login', data={
+                    'username': 'syncteacher',
+                    'password': '123456',
+                    'role': 'teacher',
+                })
+                self.assertEqual(first_login.status_code, 302)
+                dashboard = client.get('/dashboard')
+                self.assertIn(
+                    b'Google Sheets data loaded on first teacher sign-in: 1 user accounts, 1 lessons, 1 practice records.',
+                    dashboard.data,
+                )
+                client.get('/logout')
+                second_login = client.post('/login', data={
+                    'username': 'syncteacher',
+                    'password': '123456',
+                    'role': 'teacher',
+                })
+                self.assertEqual(second_login.status_code, 302)
+
+        self.assertEqual(read_rows.call_count, 3)
+        sync_users.assert_called_once_with([{'loaded_from': 'Users'}])
+        sync_lessons.assert_called_once_with([{'loaded_from': 'Lesson'}])
+        sync_practice.assert_called_once_with([{'loaded_from': 'Practice'}])
+        self.assertTrue(app_module.initial_teacher_sheet_sync_complete())
+
+    def test_initial_teacher_sync_failure_does_not_mark_sync_complete(self):
+        def failed_read(sheet_name):
+            app_module._GOOGLE_SHEET_READ_STATUS[sheet_name.lower()] = sheet_name != 'Lesson'
+            return []
+
+        with patch.object(app_module, 'vercel_auth_enabled', return_value=True), patch.object(
+            app_module, '_read_google_worksheet_rows', side_effect=failed_read
+        ):
+            with self.assertRaisesRegex(RuntimeError, 'Lesson'):
+                app_module.load_google_sheet_data_on_first_teacher_login()
+
+        self.assertFalse(app_module.initial_teacher_sheet_sync_complete())
+
+    def test_cloud_database_does_not_seed_demo_users_or_lessons(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_file = app_module.DATA_FILE
+            try:
+                app_module.DATA_FILE = str(Path(temp_dir) / 'cloud-test.db')
+                with patch.object(app_module, 'vercel_auth_enabled', return_value=True):
+                    app_module.init_db()
+                conn = app_module.get_db()
+                user_count = conn.execute('SELECT COUNT(*) FROM users').fetchone()[0]
+                lesson_count = conn.execute('SELECT COUNT(*) FROM lessons').fetchone()[0]
+                conn.close()
+            finally:
+                app_module.DATA_FILE = original_data_file
+
+        self.assertEqual(user_count, 0)
+        self.assertEqual(lesson_count, 0)
+
+    def test_registration_form_does_not_show_personalized_sample_identity(self):
+        with app_module.app.test_client() as client:
+            response = client.get('/register')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(b'Lan Nguyen', response.data)
+        self.assertNotIn(b'lannguyen', response.data)
+        self.assertNotIn(b'student@school.com', response.data)
 
     def test_cloud_teacher_named_huynt_without_headteacher_claim_is_not_admin(self):
         remote_account = {
@@ -2197,6 +2296,8 @@ class AppFeatureTests(unittest.TestCase):
         }
         with patch.object(app_module, 'IS_FROZEN', True), patch.object(
             app_module, 'call_vercel_api', return_value=remote_account
+        ), patch.object(
+            app_module, 'load_google_sheet_data_on_first_teacher_login'
         ):
             with app_module.app.test_client() as client:
                 login_response = client.post('/login', data={

@@ -13,7 +13,10 @@ Không đưa API key vào ứng dụng Windows.
    `HeadTeacher`, rồi kiểm tra hash mật khẩu và trạng thái.
 3. Nếu đăng nhập thành công, Vercel cấp JWT ký bằng `APP_SESSION_SECRET`, sống
    trong 4 giờ. Ứng dụng tự tạo/cập nhật hồ sơ SQLite cục bộ để gắn dữ liệu học
-   tập với email và role trên Sheet, rồi giữ token trong SQLite để gọi API.
+   tập với email và role trên Sheet, rồi giữ token trong SQLite để gọi API. Ở
+   lần đăng nhập Teacher online đầu tiên, ứng dụng tự tải các tab `Users`,
+   `Lesson`, `Practice` vào SQLite; nếu có tab tải lỗi thì lần đăng nhập Teacher
+   tiếp theo sẽ thử lại.
 4. Vercel gọi Gemini, Groq, Google Sheets và Google Drive bằng credentials chỉ
    lưu trong Environment Variables.
 5. File audio/video được ứng dụng chuyển đến phiên resumable upload trên Google
@@ -78,6 +81,9 @@ full_name | username | email | password | role | class_name | status
 - Vercel xác thực trực tiếp từ Sheet; lần đăng nhập thành công đầu tiên sẽ
   tự tạo hồ sơ cục bộ theo email, username, tên, lớp và role từ Sheet. Không
   cần tạo trước cùng một hồ sơ trong SQLite.
+- Lần đăng nhập Teacher online đầu tiên trên mỗi cài đặt cũng tải dữ liệu từ
+  `Users`, `Lesson`, `Practice`; chỉ đánh dấu hoàn tất khi đọc được cả ba tab.
+  Bản cloud không tự tạo tài khoản học sinh hoặc bài học mẫu trong SQLite.
 - Đồng bộ và đăng nhập đọc cả tài khoản `student` và `teacher`; thao tác đồng bộ
   không loại bỏ dòng giáo viên. Mục **My Account** cập nhật tên, username, email
   và mật khẩu (nếu đổi) ngược vào dòng giáo viên trong `Users`.

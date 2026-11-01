@@ -707,6 +707,12 @@ def init_db():
         )
     ''')
     conn.execute('''
+        CREATE TABLE IF NOT EXISTS app_settings (
+            setting_key TEXT PRIMARY KEY,
+            setting_value TEXT NOT NULL
+        )
+    ''')
+    conn.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             full_name TEXT NOT NULL,
@@ -861,15 +867,16 @@ def init_db():
     conn.execute('UPDATE users SET total_points = 0 WHERE total_points IS NULL')
     conn.execute('UPDATE users SET average_score = 0 WHERE average_score IS NULL')
 
+    use_demo_data = not vercel_auth_enabled()
     user_count = conn.execute('SELECT COUNT(*) as c FROM users').fetchone()['c']
-    if user_count == 0:
+    if user_count == 0 and use_demo_data:
         conn.execute(
             'INSERT INTO users (full_name, username, email, password, role, class_name, is_active, total_points, average_score) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
             ('Lan Nguyen', 'lannguyen', 'student@school.com', '123456', 'student', '7A', 1, 0, 0)
         )
 
     teacher_count = conn.execute("SELECT COUNT(*) AS count FROM users WHERE role = 'teacher'").fetchone()['count']
-    if teacher_count == 0:
+    if teacher_count == 0 and use_demo_data:
         for teacher in TEACHER_ACCOUNTS:
             conn.execute(
                 'INSERT INTO users (full_name, username, email, password, role, class_name, is_active, total_points, average_score) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -885,7 +892,7 @@ def init_db():
                     0,
                 )
             )
-    else:
+    elif teacher_count and use_demo_data:
         legacy_teacher = conn.execute(
             "SELECT id FROM users WHERE role = 'teacher' AND username = 'mrhuy' ORDER BY id LIMIT 1"
         ).fetchone()
@@ -903,7 +910,7 @@ def init_db():
             )
 
     lesson_count = conn.execute('SELECT COUNT(*) as c FROM lessons').fetchone()['c']
-    if lesson_count == 0:
+    if lesson_count == 0 and use_demo_data:
         for item in LESSONS:
             conn.execute(
                 '''
@@ -1641,8 +1648,9 @@ def _clean_sheet_score(value, default=0):
         return default
 
 
-def sync_google_practice_into_db():
-    rows = _read_google_worksheet_rows('Practice')
+def sync_google_practice_into_db(rows=None):
+    if rows is None:
+        rows = _read_google_worksheet_rows('Practice')
     sheet_read_succeeded = bool(rows) or _google_sheet_read_succeeded('Practice')
     if not sheet_read_succeeded:
         return []
@@ -1860,7 +1868,7 @@ def get_lessons():
 
 def _read_google_worksheet_rows(sheet_title):
     _GOOGLE_SHEET_READ_STATUS[sheet_title.lower()] = False
-    if IS_FROZEN:
+    if vercel_auth_enabled():
         result = call_google_function('read_sheet', {'sheet': sheet_title})
         rows = result.get('rows') if result else None
         if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
@@ -1933,8 +1941,9 @@ def _google_sheet_read_succeeded(sheet_title):
     return bool(_GOOGLE_SHEET_READ_STATUS.get(sheet_title.lower(), False))
 
 
-def sync_google_students_into_db():
-    rows = _read_google_worksheet_rows(USER_SHEET_NAME)
+def sync_google_students_into_db(rows=None):
+    if rows is None:
+        rows = _read_google_worksheet_rows(USER_SHEET_NAME)
     sheet_read_succeeded = bool(rows) or _google_sheet_read_succeeded(USER_SHEET_NAME)
     if not sheet_read_succeeded:
         return []
@@ -2103,8 +2112,9 @@ def _deduplicate_lessons_by_content(conn):
     return removed_ids
 
 
-def sync_google_lessons_into_db():
-    rows = _read_google_worksheet_rows('Lesson')
+def sync_google_lessons_into_db(rows=None):
+    if rows is None:
+        rows = _read_google_worksheet_rows('Lesson')
     sheet_read_succeeded = bool(rows) or _google_sheet_read_succeeded('Lesson')
     if not sheet_read_succeeded:
         return []
@@ -3221,6 +3231,63 @@ def index():
     )
 
 
+def initial_teacher_sheet_sync_complete():
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT setting_value FROM app_settings WHERE setting_key = 'initial_teacher_sheet_sync'"
+        ).fetchone()
+        return bool(row and row['setting_value'] == 'complete')
+    finally:
+        conn.close()
+
+
+def load_google_sheet_data_on_first_teacher_login():
+    if not vercel_auth_enabled() or initial_teacher_sheet_sync_complete():
+        return
+
+    sheets = (USER_SHEET_NAME, 'Lesson', 'Practice')
+    rows_by_sheet = {
+        sheet_name: _read_google_worksheet_rows(sheet_name)
+        for sheet_name in sheets
+    }
+    unreadable_sheets = [
+        sheet_name for sheet_name in sheets
+        if not _google_sheet_read_succeeded(sheet_name)
+    ]
+    if unreadable_sheets:
+        raise RuntimeError(
+            'Could not load Google Sheets data from: '
+            + ', '.join(unreadable_sheets)
+            + '. Check the sheet names and Google/Vercel configuration, then sign in again to retry.'
+        )
+
+    synced_users = sync_google_students_into_db(rows_by_sheet[USER_SHEET_NAME])
+    synced_lessons = sync_google_lessons_into_db(rows_by_sheet['Lesson'])
+    synced_practice = sync_google_practice_into_db(rows_by_sheet['Practice'])
+
+    conn = get_db()
+    try:
+        conn.execute(
+            '''
+            INSERT INTO app_settings (setting_key, setting_value)
+            VALUES ('initial_teacher_sheet_sync', 'complete')
+            ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value
+            '''
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    set_session_message(
+        'google_sync_warning',
+        'Google Sheets data loaded on first teacher sign-in: '
+        f'{len(synced_users)} user accounts, {len(synced_lessons)} lessons, '
+        f'{len(synced_practice)} practice records.',
+    )
+    set_session_message('google_sync_success', True)
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -3272,6 +3339,16 @@ def login():
             session['headteacher_claim_user_id'] = user['id']
             if bool((login_result or {}).get('is_headteacher')):
                 session['headteacher_user_id'] = user['id']
+            if role == 'teacher':
+                try:
+                    load_google_sheet_data_on_first_teacher_login()
+                except Exception as exc:
+                    logger.exception('Initial Google Sheets load failed after teacher sign-in.')
+                    set_session_message(
+                        'google_sync_warning',
+                        f'Could not load Google Sheets data: {exc}',
+                    )
+                    set_session_message('google_sync_success', False)
             return redirect(url_for('dashboard'))
 
         conn = get_db()
@@ -3305,6 +3382,16 @@ def login():
             session['user_role'] = user['role']
             session['lang'] = session.get('lang', 'en') or 'en'
             conn.close()
+            if role == 'teacher':
+                try:
+                    load_google_sheet_data_on_first_teacher_login()
+                except Exception as exc:
+                    logger.exception('Initial Google Sheets load failed after teacher sign-in.')
+                    set_session_message(
+                        'google_sync_warning',
+                        f'Could not load Google Sheets data: {exc}',
+                    )
+                    set_session_message('google_sync_success', False)
             return redirect(url_for('dashboard'))
 
         conn.close()
