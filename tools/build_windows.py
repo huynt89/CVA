@@ -4,8 +4,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT_DIRECTORY = ROOT / "dist" / "standalone"
-WORK_DIRECTORY = ROOT / "build" / "standalone"
+OUTPUT_DIRECTORY = ROOT / "dist" / "cva-distribution"
+WORK_DIRECTORY = ROOT / "build" / "cva-distribution"
+EXECUTABLE_NAME = "CVA Let's speak!"
 
 
 def main():
@@ -22,7 +23,7 @@ def main():
         "--onefile",
         "--noconsole",
         "--name",
-        "EngClassAI",
+        EXECUTABLE_NAME,
         "--icon",
         str(icon),
         "--distpath",
@@ -39,9 +40,11 @@ def main():
     ]
     subprocess.run(command, cwd=ROOT, check=True)
 
-    executable = OUTPUT_DIRECTORY / "EngClassAI.exe"
+    executable = OUTPUT_DIRECTORY / f"{EXECUTABLE_NAME}.exe"
     if not executable.is_file():
-        raise FileNotFoundError("PyInstaller completed without producing EngClassAI.exe.")
+        raise FileNotFoundError(
+            f"PyInstaller completed without producing {EXECUTABLE_NAME}.exe."
+        )
     unexpected_files = [
         path.name for path in OUTPUT_DIRECTORY.iterdir()
         if path != executable
@@ -52,7 +55,7 @@ def main():
             + ", ".join(unexpected_files)
         )
     print(f"Built standalone application: {executable}")
-    print("The output directory contains only EngClassAI.exe.")
+    print(f"The output directory contains only {EXECUTABLE_NAME}.exe.")
 
 
 if __name__ == "__main__":

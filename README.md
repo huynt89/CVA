@@ -30,7 +30,7 @@ Trên Windows, cài dependencies trong `.venv`, sau đó chạy:
 .\.venv\Scripts\python.exe tools\build_windows.py
 ```
 
-File đầu ra duy nhất là `dist\standalone\EngClassAI.exe`. Bản này không mở
+File đầu ra là `dist\cva-distribution\CVA Let's speak!.exe`. Bản này không mở
 terminal; nó mở giao diện trong cửa sổ ứng dụng Edge/Chrome và dừng web server
 cục bộ khi cửa sổ ứng dụng đóng. Edge hoặc Chrome phải được cài trên máy.
 Icon Windows lấy từ `static/images/cva-logo.ico`.
@@ -45,12 +45,16 @@ Icon Windows lấy từ `static/images/cva-logo.ico`.
   hash, không lưu mật khẩu dạng rõ. Chạy `tools/generate_password_hash.py` để
   tạo hash scrypt. Bản Windows đóng gói không tự đăng ký tài khoản; giáo viên
   thêm tài khoản vào Sheet `Users`, sau đó người dùng đăng nhập bằng tài khoản đó.
+- **Google Sheet `HeadTeacher`** giữ tài khoản headteacher với các cột
+  `full_name`, `username`, `password`, `email`, `role`, `status`; `role` phải là
+  `headteacher`, `status` là `active`, và `password` lưu scrypt hash. Tài khoản
+  đăng nhập trong mục Teacher và mới có quyền quản lý các tài khoản giáo viên.
 - **Ứng dụng Windows** giữ dữ liệu nghiệp vụ cục bộ trong SQLite. Khi đăng nhập,
-  Vercel tra username/email, hash mật khẩu, role và trạng thái trong `Users`.
+  Vercel tra `Users` hoặc `HeadTeacher` theo mục đăng nhập đã chọn.
   Ứng dụng tự tạo/cập nhật hồ sơ SQLite cục bộ từ tài khoản đã xác thực để lưu
   dữ liệu học tập; thông tin đăng nhập được quyết định bởi Sheet. Đồng bộ danh
   sách hỗ trợ cả hai role và giữ mật khẩu hash. Thay đổi hồ sơ giáo viên trong
-  My Account được ghi ngược vào dòng tài khoản trong `Users`.
+  My Account được ghi ngược vào đúng tab của tài khoản (`Users` hoặc `HeadTeacher`).
 - **Media** được tải trực tiếp từ Flask lên phiên tải lên resumable của Google
   Drive do Vercel cấp. Vercel chỉ lưu secret, xác nhận chủ sở hữu file, đặt
   quyền xem cho liên kết Drive và xử lý transcription.

@@ -109,6 +109,36 @@ class AppFeatureTests(unittest.TestCase):
         find_process.assert_called_once()
         wait_process.assert_called_once_with(12345)
 
+    def test_browser_profile_waits_until_background_processes_exit(self):
+        with patch.object(
+            desktop_entry,
+            'find_browser_process_ids',
+            side_effect=[{12345}, set()],
+        ) as find_processes, patch.object(desktop_entry.time, 'sleep') as sleep:
+            desktop_entry.wait_for_browser_profile_exit(
+                Path('C:/Users/test/AppData/Local/CVA/browser-profile'),
+                timeout=1,
+            )
+
+        self.assertEqual(find_processes.call_count, 2)
+        sleep.assert_called_once_with(0.25)
+
+    def test_browser_profile_wait_reports_processes_that_do_not_exit(self):
+        with patch.object(
+            desktop_entry,
+            'find_browser_process_ids',
+            return_value={12345},
+        ), patch.object(
+            desktop_entry.time,
+            'monotonic',
+            side_effect=[0, 2, 2],
+        ), patch.object(desktop_entry.time, 'sleep'):
+            with self.assertRaisesRegex(RuntimeError, 'background processes did not exit'):
+                desktop_entry.wait_for_browser_profile_exit(
+                    Path('C:/Users/test/AppData/Local/CVA/browser-profile'),
+                    timeout=1,
+                )
+
     def test_app_data_directory_honors_configured_data_path(self):
         with patch.dict(
             os.environ,
