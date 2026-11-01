@@ -17,7 +17,7 @@
             <nav>
                 <a href="{{ url_for('dashboard') }}"><span class="nav-icon">🏠</span><span class="nav-label">{{ t('dashboard') }}</span></a>
                 <a href="{{ url_for('teacher_students') }}"><span class="nav-icon">👥</span><span class="nav-label">{{ t('student') }}</span></a>
-                {% if is_headteacher %}<a href="{{ url_for('teacher_accounts') }}"><span class="nav-icon">🧑‍🏫</span><span class="nav-label">Teacher</span></a>{% endif %}
+                {% if is_headteacher %}<a href="{{ url_for('teacher_accounts') }}"><span class="nav-icon">👩‍🏫</span><span class="nav-label">Teacher</span></a>{% endif %}
                 <a href="{{ url_for('teacher_lessons') }}"><span class="nav-icon">📘</span><span class="nav-label">{{ t('lessons') }}</span></a>
                 <a class="active" href="{{ url_for('teacher_practice') }}"><span class="nav-icon">🎤</span><span class="nav-label">Practice</span></a>
                 <a href="{{ url_for('teacher_profile') }}"><span class="nav-icon">👤</span><span class="nav-label">My account</span></a>
