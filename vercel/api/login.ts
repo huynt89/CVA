@@ -34,22 +34,35 @@ function checkLoginLimit(key: string) {
   record.count += 1;
 }
 
-function validPassword(password: string, encoded: string) {
-  const [algorithm, salt, hash] = encoded.split("$");
-  if (algorithm !== "scrypt" || !salt || !hash) return false;
+function verifyPassword(password: string, encoded: string) {
+  const parts = encoded.split("$");
+  if (parts.length !== 3 || parts[0] !== "scrypt" || !parts[1] || !parts[2]) {
+    return { valid: false, formatValid: false };
+  }
+  const [, salt, hash] = parts;
   try {
     const saltBytes = Buffer.from(salt, "base64");
     const expected = Buffer.from(hash, "base64");
-    if (saltBytes.length !== 16 || expected.length !== 64) return false;
+    if (
+      saltBytes.length !== 16
+      || expected.length !== 64
+      || saltBytes.toString("base64") !== salt
+      || expected.toString("base64") !== hash
+    ) {
+      return { valid: false, formatValid: false };
+    }
     const actual = scryptSync(password, saltBytes, expected.length, {
       N: 16_384,
       r: 8,
       p: 1,
       maxmem: 64 * 1024 * 1024,
     });
-    return expected.length === actual.length && timingSafeEqual(expected, actual);
+    return {
+      valid: expected.length === actual.length && timingSafeEqual(expected, actual),
+      formatValid: true,
+    };
   } catch {
-    return false;
+    return { valid: false, formatValid: true };
   }
 }
 
@@ -167,12 +180,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!["true", "1", "yes", "active"].includes(String(user.is_active ?? "").toLowerCase())) {
       rejectLogin("account_inactive");
     }
-    if (
-      ![user.password_hash, user.password].some((candidate) =>
-        candidate ? validPassword(password, candidate) : false,
-      )
-    ) {
-      rejectLogin("password_mismatch_or_hash_invalid");
+    const passwordChecks = [user.password_hash, user.password]
+      .filter((candidate): candidate is string => Boolean(candidate))
+      .map((candidate) => verifyPassword(password, candidate));
+    if (!passwordChecks.some((check) => check.valid)) {
+      rejectLogin(
+        passwordChecks.some((check) => check.formatValid)
+          ? "password_does_not_match_scrypt_hash"
+          : "password_hash_invalid_format",
+      );
     }
 
     const normalizedUser = { id: email, email, role };

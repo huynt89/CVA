@@ -59,6 +59,47 @@ hash được in vào cột `password` của đúng dòng trong tab `Student`. L
 tài khoản giáo viên. Không ghi mật khẩu dạng rõ vào Sheet và không commit hash
 hay mật khẩu vào GitHub.
 
+Nếu log Vercel báo `password_does_not_match_scrypt_hash` hoặc
+`password_hash_invalid_format`, có thể kiểm tra ngay trên máy tin cậy bằng:
+
+```powershell
+.\.venv\Scripts\python.exe tools\generate_password_hash.py verify
+```
+
+Paste hash lấy trực tiếp từ ô `password` của đúng dòng Student, sau đó nhập
+mật khẩu mà bạn đang thử đăng nhập. Cả hai giá trị đều được nhập ẩn; chương
+trình chỉ báo `MATCH` hoặc `NO MATCH`, không in/lưu chúng. Nếu `NO MATCH`,
+chọn `generate` (hoặc bỏ tham số), tạo hash bằng đúng mật khẩu mong muốn rồi
+thay toàn bộ nội dung ô `password` trong đúng dòng tài khoản. Redeploy API
+không cần thiết sau khi chỉ sửa dữ liệu Sheet.
+
+### Đặt mật khẩu khởi tạo mặc định cho tài khoản
+
+Để tạo tài khoản active mới với mật khẩu khởi tạo `123456` (được lưu dưới dạng
+scrypt hash, không lưu mật khẩu rõ), chạy tại máy tin cậy. `.env` local cần có
+`GOOGLE_SHEET_ID`; service account phải có quyền Editor trên Sheet:
+
+```powershell
+.\.venv\Scripts\python.exe tools\create_student_account.py "Demo User" demo demo@abc.com student --class-name 6A
+```
+
+Thay tên, username, email, role (`student` hoặc `teacher`) và lớp theo tài khoản
+cần tạo. Script kiểm tra username/email trùng, hiển thị thông tin tài khoản
+không nhạy cảm, rồi yêu cầu gõ `APPLY` trước khi thêm dòng vào tab `Student`.
+Chỉ hash scrypt được ghi vào cột `password`; đăng nhập vẫn kiểm tra username,
+mật khẩu `123456`, role và trạng thái `active`. Mật khẩu chung này yếu, chỉ
+nên dùng tạm thời hoặc cho tài khoản thử nghiệm. Lệnh ghi trực tiếp vào Google
+Sheet và không cần redeploy Vercel hay build EXE.
+
+Để đặt lại mật khẩu mặc định cho các tài khoản đã có, dùng
+`tools\set_default_student_password.py` với danh sách username và xác nhận
+`APPLY`.
+
+Khi giáo viên tạo học sinh bằng **Add Student** trong giao diện ứng dụng,
+đồng bộ Student cũng chuyển mật khẩu từ hồ sơ local thành scrypt hash trước
+khi ghi lên Sheet. Hash hợp lệ đã có trên Sheet được giữ nguyên trong các lần
+đồng bộ tiếp theo.
+
 ## B. Tạo Vercel project
 
 1. Push mã nguồn lên repo private GitHub `CVA`.

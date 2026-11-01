@@ -100,6 +100,20 @@ khi phát hành thì cần build và phát hành lại ứng dụng desktop.
 
 ## 5. Phát hành ứng dụng Windows
 
+Để build một EXE độc lập trên Windows (không kèm launcher hoặc ZIP), chạy:
+
+```powershell
+.\.venv\Scripts\python.exe tools\build_windows.py
+```
+
+File duy nhất được tạo trong thư mục đầu ra mới `dist\standalone` là
+`EngClassAI.exe`. EXE không hiện terminal, mở giao diện trong cửa sổ Edge/Chrome
+kiểu ứng dụng và dừng server cục bộ khi cửa sổ đó đóng. Icon lấy từ
+`static/images/cva-logo.ico`; máy chạy cần cài Edge hoặc Chrome.
+
+Quy trình GitHub Actions bên dưới vẫn là quy trình phát hành cũ có launcher và
+ZIP để hỗ trợ cập nhật. Dùng build độc lập ở trên nếu cần đúng một file EXE.
+
 Trong repo private GitHub, vào **Settings → Secrets and variables → Actions**:
 
 - Repository variables:

@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import json
 import logging
 import os
@@ -2557,7 +2559,19 @@ def merge_student_sheet_values(values, existing_values):
             for index, header in enumerate(required_headers)
         }
         previous = previous_by_key.get(account_key(incoming), {})
-        merged_records.append({**previous, **incoming})
+        merged = {**previous, **incoming}
+        if 'password' in headers:
+            previous_password = str(previous.get('password') or '').strip()
+            incoming_password = str(incoming.get('password') or '').strip()
+            if is_scrypt_password_hash(previous_password):
+                merged['password'] = previous_password
+            elif incoming_password:
+                merged['password'] = hash_password_for_sheet(incoming_password)
+            elif previous_password:
+                merged['password'] = hash_password_for_sheet(previous_password)
+            else:
+                merged['password'] = ''
+        merged_records.append(merged)
         if previous.get('role', '').strip().lower() == 'teacher':
             included_teachers.add(account_key(previous))
     merged_records.extend(
@@ -2573,6 +2587,43 @@ def merge_student_sheet_values(values, existing_values):
     ]
 
 
+def is_scrypt_password_hash(value):
+    parts = str(value or '').split('$')
+    if len(parts) != 3 or parts[0] != 'scrypt':
+        return False
+    try:
+        salt = base64.b64decode(parts[1], validate=True)
+        digest = base64.b64decode(parts[2], validate=True)
+    except (ValueError, base64.binascii.Error):
+        return False
+    return (
+        len(salt) == 16
+        and len(digest) == 64
+        and base64.b64encode(salt).decode('ascii') == parts[1]
+        and base64.b64encode(digest).decode('ascii') == parts[2]
+    )
+
+
+def hash_password_for_sheet(password):
+    if is_scrypt_password_hash(password):
+        return password
+    salt = secrets.token_bytes(16)
+    digest = hashlib.scrypt(
+        str(password).encode('utf-8'),
+        salt=salt,
+        n=16384,
+        r=8,
+        p=1,
+        dklen=64,
+        maxmem=64 * 1024 * 1024,
+    )
+    return '$'.join((
+        'scrypt',
+        base64.b64encode(salt).decode('ascii'),
+        base64.b64encode(digest).decode('ascii'),
+    ))
+
+
 def sync_students_to_sheet(rows=None):
     try:
         if rows is None:
@@ -2585,13 +2636,14 @@ def sync_students_to_sheet(rows=None):
             finally:
                 conn.close()
 
-        required_headers = ['full_name', 'username', 'email', 'role', 'class_name', 'status', 'total_points', 'average_score']
+        required_headers = ['full_name', 'username', 'email', 'password', 'role', 'class_name', 'status', 'total_points', 'average_score']
         sheet_values = [required_headers]
         sheet_values.extend([
             [
                 row.get('full_name', ''),
                 row.get('username', generate_username(row.get('full_name', ''), row.get('email', ''))),
                 row.get('email', ''),
+                row.get('password', ''),
                 row.get('role', 'student'),
                 row.get('class_name', ''),
                 'active' if row.get('is_active', True) else 'locked',

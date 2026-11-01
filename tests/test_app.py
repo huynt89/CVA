@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import app as app_module
+import desktop_entry
 
 
 class AppFeatureTests(unittest.TestCase):
@@ -37,6 +38,60 @@ class AppFeatureTests(unittest.TestCase):
 
             self.assertEqual(result, 'credentials')
             self.assertEqual(load_credentials.call_args.args[0], credentials_file)
+
+    def test_browser_command_opens_an_isolated_app_window(self):
+        command = desktop_entry.browser_command(
+            Path('C:/Program Files/Microsoft/Edge/Application/msedge.exe'),
+            'http://127.0.0.1:12345/',
+            Path('C:/Users/test/AppData/Local/CVA/browser-profile'),
+        )
+        self.assertIn('--app=http://127.0.0.1:12345/', command)
+        self.assertIn(
+            '--user-data-dir=C:\\Users\\test\\AppData\\Local\\CVA\\browser-profile',
+            command,
+        )
+        self.assertIn('--no-first-run', command)
+
+    def test_find_browser_uses_first_installed_candidate(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            first = Path(temp_dir) / 'edge.exe'
+            second = Path(temp_dir) / 'chrome.exe'
+            first.touch()
+            second.touch()
+            self.assertEqual(
+                desktop_entry.find_browser([first, second]),
+                first,
+            )
+
+    def test_browser_handoff_waits_for_the_actual_app_window_process(self):
+        browser_process = Mock()
+        browser_process.wait.return_value = 0
+        with patch.object(
+            desktop_entry,
+            'find_browser_process_id',
+            return_value=12345,
+        ) as find_process, patch.object(
+            desktop_entry,
+            'wait_for_process_exit',
+        ) as wait_process:
+            result = desktop_entry.wait_for_browser_window(
+                browser_process,
+                Path('C:/Users/test/AppData/Local/CVA/browser-profile'),
+            )
+
+        self.assertEqual(result, 0)
+        find_process.assert_called_once()
+        wait_process.assert_called_once_with(12345)
+
+    def test_app_data_directory_honors_configured_data_path(self):
+        with patch.dict(
+            os.environ,
+            {'ENG_APP_DATA_DIR': 'C:/Users/test/app-data'},
+        ):
+            self.assertEqual(
+                desktop_entry.app_data_directory(),
+                Path('C:/Users/test/app-data'),
+            )
 
     def test_load_env_file_from_application_directory(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -100,17 +155,17 @@ class AppFeatureTests(unittest.TestCase):
         conn.close()
         self.assertEqual(student['role'], 'student')
 
-    def test_frozen_registration_is_hidden_and_explains_sheet_managed_accounts(self):
+    def test_frozen_registration_is_hidden_and_redirects_without_notice(self):
         with patch.object(app_module, 'IS_FROZEN', True):
             with app_module.app.test_client() as client:
                 login_page = client.get('/login')
                 self.assertEqual(login_page.status_code, 200)
                 self.assertNotIn(b'id="registerLink"', login_page.data)
-                self.assertIn(b'New accounts are managed by your teacher in the Student sheet.', login_page.data)
+                self.assertNotIn(b'New accounts are managed by your teacher in the Student sheet.', login_page.data)
 
                 registration_page = client.get('/register')
-                self.assertEqual(registration_page.status_code, 403)
-                self.assertIn(b'New accounts are managed by your teacher in the Student sheet.', registration_page.data)
+                self.assertEqual(registration_page.status_code, 302)
+                self.assertEqual(registration_page.headers['Location'], '/login')
 
     def test_two_configured_teacher_accounts_exist_and_can_log_in(self):
         conn = app_module.get_db()
@@ -1688,23 +1743,83 @@ class AppFeatureTests(unittest.TestCase):
         self.assertEqual(upload.call_args.args[0], 'https://upload.example.test/session')
 
     def test_student_sheet_sync_preserves_password_hashes_and_teacher_account(self):
+        student_hash = app_module.hash_password_for_sheet('student-password')
+        teacher_hash = app_module.hash_password_for_sheet('teacher-password')
         merged = app_module.merge_student_sheet_values(
             [
-                ['full_name', 'username', 'email', 'role', 'class_name', 'status'],
-                ['Student One', 'studentone', 'student@example.com', 'student', '7A', 'active'],
+                ['full_name', 'username', 'email', 'password', 'role', 'class_name', 'status'],
+                ['Student One', 'studentone', 'student@example.com', '123456', 'student', '7A', 'active'],
             ],
             [
                 ['full_name', 'username', 'email', 'role', 'class_name', 'status', 'password'],
-                ['Student One', 'studentone', 'student@example.com', 'student', '7A', 'active', 'scrypt$student-hash'],
-                ['Teacher One', 'teacherone', 'teacher@example.com', 'teacher', '', 'active', 'scrypt$teacher-hash'],
+                ['Student One', 'studentone', 'student@example.com', 'student', '7A', 'active', student_hash],
+                ['Teacher One', 'teacherone', 'teacher@example.com', 'teacher', '', 'active', teacher_hash],
             ],
         )
 
         headers = merged[0]
         rows_by_email = {row[headers.index('email')]: row for row in merged[1:]}
-        self.assertEqual(rows_by_email['student@example.com'][headers.index('password')], 'scrypt$student-hash')
-        self.assertEqual(rows_by_email['teacher@example.com'][headers.index('password')], 'scrypt$teacher-hash')
+        self.assertEqual(rows_by_email['student@example.com'][headers.index('password')], student_hash)
+        self.assertEqual(rows_by_email['teacher@example.com'][headers.index('password')], teacher_hash)
         self.assertEqual(len(merged), 3)
+
+    def test_new_student_sync_writes_scrypt_hash_not_plaintext(self):
+        merged = app_module.merge_student_sheet_values(
+            [
+                ['full_name', 'username', 'email', 'password', 'role', 'class_name', 'status'],
+                ['New Student', 'newstudent', 'new@example.com', '123456', 'student', '6A', 'active'],
+            ],
+            [],
+        )
+        headers = merged[0]
+        password_hash = merged[1][headers.index('password')]
+        self.assertTrue(app_module.is_scrypt_password_hash(password_hash))
+        self.assertNotEqual(password_hash, '123456')
+        from tools.generate_password_hash import verify_password_hash
+
+        self.assertTrue(verify_password_hash('123456', password_hash))
+
+    def test_student_sync_writes_new_account_password_as_hash(self):
+        worksheet = Mock()
+        worksheet.get_all_values.return_value = [[
+            'full_name',
+            'username',
+            'password',
+            'email',
+            'role',
+            'class_name',
+            'status',
+            'total_points',
+            'average_score',
+        ]]
+        spreadsheet = Mock()
+        spreadsheet.worksheet.return_value = worksheet
+        client = Mock()
+        client.open_by_key.return_value = spreadsheet
+
+        with patch.object(app_module, 'IS_FROZEN', False), patch.object(
+            app_module, 'get_google_credentials', return_value='credentials'
+        ), patch.object(
+            app_module.gspread, 'authorize', return_value=client
+        ), patch.dict(os.environ, {'GOOGLE_SHEET_ID': 'test-sheet-id'}):
+            synced = app_module.sync_students_to_sheet([{
+                'full_name': 'Created Student',
+                'username': 'createdstudent',
+                'email': 'createdstudent@example.test',
+                'password': '123456',
+                'role': 'student',
+                'class_name': '7A',
+                'is_active': True,
+                'total_points': 0,
+                'average_score': 0,
+            }])
+
+        self.assertTrue(synced)
+        written_values = worksheet.update.call_args.kwargs['values']
+        password_hash = written_values[1][written_values[0].index('password')]
+        from tools.generate_password_hash import verify_password_hash
+
+        self.assertTrue(verify_password_hash('123456', password_hash))
 
     def test_vercel_evaluation_can_select_groq_provider(self):
         response_data = {
