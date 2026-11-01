@@ -22,6 +22,8 @@ from google.oauth2 import service_account
 from openpyxl import load_workbook
 from werkzeug.utils import secure_filename
 
+from translations import TRANSLATIONS
+
 try:
     from googleapiclient.discovery import build as google_drive_build
     from googleapiclient.http import MediaFileUpload
@@ -524,170 +526,6 @@ def load_env_file():
 load_env_file()
 app.secret_key = os.getenv('APP_SECRET_KEY', app.secret_key)
 
-TRANSLATIONS = {
-    'vi': {
-        'app_name': 'CVA Let\'s speak!',
-        'login_title': 'Đăng nhập',
-        'welcome': 'Chào mừng bạn đến với CVA Let\'s speak!',
-        'student_login': 'Đăng nhập học sinh',
-        'teacher_login': 'Đăng nhập giáo viên',
-        'register': 'Tạo tài khoản',
-        'user': 'User',
-        'username': 'Tên đăng nhập',
-        'email': 'Email',
-        'password': 'Mật khẩu',
-        'full_name': 'Họ và tên',
-        'class_name': 'Lớp học',
-        'role': 'Vai trò',
-        'submit': 'Xác nhận',
-        'student': 'Học sinh',
-        'teacher': 'Giáo viên',
-        'dashboard': 'Bảng điều khiển',
-        'lessons': 'Bài học',
-        'progress': 'Tiến độ',
-        'logout': 'Đăng xuất',
-        'language': 'Ngôn ngữ',
-        'continue_learning': 'Tiếp tục học',
-        'today_goal': 'Mục tiêu hôm nay',
-        'daily_task': 'Nhiệm vụ trong ngày',
-        'open_lesson': 'Mở bài',
-        'practice_now': 'Luyện tập ngay',
-        'teacher_dashboard': 'CVA Let\'s speak!',
-        'assignments': 'Bài tập',
-        'classes': 'Lớp học',
-        'quick_actions': 'Hành động nhanh',
-        'score': 'Điểm',
-        'feedback': 'Nhận xét',
-        'speak_prompt': 'Luyện tập ngay',
-        'record_audio': 'Ghi âm',
-        'upload_audio': 'Tải âm thanh',
-        'sentence_rearrange': 'Sắp xếp từ',
-        'skills': 'Kỹ năng',
-        'sample_video': 'Video minh họa',
-        'vocabulary': 'Từ vựng',
-    },
-    'en': {
-        'app_name': 'CVA Let\'s speak!',
-        'login_title': 'Login',
-        'welcome': 'Welcome to CVA Let\'s speak!',
-        'student_login': 'Student login',
-        'teacher_login': 'Teacher login',
-        'register': 'Create account',
-        'user': 'User',
-        'username': 'Username',
-        'email': 'Email',
-        'password': 'Password',
-        'full_name': 'Full name',
-        'class_name': 'Class name',
-        'role': 'Role',
-        'submit': 'Submit',
-        'student': 'Student',
-        'teacher': 'Teacher',
-        'dashboard': 'Dashboard',
-        'lessons': 'Lessons',
-        'progress': 'Progress',
-        'logout': 'Logout',
-        'language': 'Language',
-        'continue_learning': 'Continue learning',
-        'today_goal': 'Today goal',
-        'daily_task': 'Daily task',
-        'open_lesson': 'Open',
-        'practice_now': 'Practice now',
-        'teacher_dashboard': 'CVA Let\'s speak!',
-        'assignments': 'Assignments',
-        'classes': 'Classes',
-        'quick_actions': 'Quick actions',
-        'score': 'Score',
-        'feedback': 'Feedback',
-        'speak_prompt': 'Practice now',
-        'record_audio': 'Record audio',
-        'upload_audio': 'Upload audio',
-        'sentence_rearrange': 'Sentence rearrange',
-        'skills': 'Skills',
-        'sample_video': 'Sample video',
-        'vocabulary': 'Vocabulary',
-    }
-}
-
-TEACHER_ACCOUNTS = (
-    {
-        'full_name': 'Huy Nguyen',
-        'username': 'huynt',
-        'email': 'huynt@school.com',
-        'password': '123456',
-    },
-    {
-        'full_name': 'Mingo',
-        'username': 'mingo',
-        'email': 'mingo@school.com',
-        'password': '123456',
-    },
-)
-
-LESSONS = [
-    {
-        'id': 1,
-        'title': 'Greetings and introductions',
-        'title_vi': 'Chào hỏi và giới thiệu bản thân',
-        'class_level': '6',
-        'level': 'THCS - Unit 1',
-        'topic_vi': 'Chào hỏi và giới thiệu bản thân',
-        'topic_en': 'Greetings and self-introduction',
-        'goal_vi': 'Học sinh có thể giới thiệu tên, tuổi và hỏi tên bạn.',
-        'goal_en': 'Students can introduce their name, age and ask for someone’s name.',
-        'video': 'https://www.youtube.com/watch?v=YQHsXMglC9A',
-        'vocabulary': ['name', 'hello', 'friend', 'school', 'introduce'],
-        'dialogue': 'Hi! My name is Lan. I am 13 years old. Nice to meet you!',
-        'sample_question': 'What is your name?',
-        'expected_answer': 'My name is Lan.',
-        'sentence_words': ['My', 'name', 'is', 'Lan', '.'],
-        'exercise_text_vi': 'Sắp xếp các từ để tạo câu đúng: My name is Lan.',
-        'exercise_text_en': 'Arrange the words to make the correct sentence: My name is Lan.',
-        'tips': ['Use “My name is...” to introduce yourself.', 'Use “Nice to meet you!” for new friends.'],
-    },
-    {
-        'id': 2,
-        'title': 'School life',
-        'title_vi': 'Cuộc sống trường học',
-        'class_level': '7',
-        'level': 'THCS - Unit 2',
-        'topic_vi': 'Cuộc sống trường học',
-        'topic_en': 'School life',
-        'goal_vi': 'Mô tả môn học yêu thích và thói quen học tập.',
-        'goal_en': 'Describe favorite subjects and study habits.',
-        'video': 'https://www.youtube.com/watch?v=ysz5S6PUM-U',
-        'vocabulary': ['favorite', 'subject', 'english', 'classroom', 'study'],
-        'dialogue': 'My favorite subject is English. I study hard every day.',
-        'sample_question': 'What is your favorite subject?',
-        'expected_answer': 'My favorite subject is English.',
-        'sentence_words': ['My', 'favorite', 'subject', 'is', 'English', '.'],
-        'exercise_text_vi': 'Sắp xếp các từ để tạo câu đúng: My favorite subject is English.',
-        'exercise_text_en': 'Arrange the words to make the correct sentence: My favorite subject is English.',
-        'tips': ['Use “favorite subject” to talk about what you like most.', 'Add “I like...” for a shorter version.'],
-    },
-    {
-        'id': 3,
-        'title': 'Daily routines',
-        'title_vi': 'Thói quen hàng ngày',
-        'class_level': '8',
-        'level': 'THCS - Unit 3',
-        'topic_vi': 'Thói quen hằng ngày',
-        'topic_en': 'Daily routines',
-        'goal_vi': 'Nói về thói quen hàng ngày theo giờ.',
-        'goal_en': 'Talk about daily routines and schedules.',
-        'video': 'https://www.youtube.com/watch?v=E7wJTI-1dvQ',
-        'vocabulary': ['wake up', 'breakfast', 'school', 'study', 'sleep'],
-        'dialogue': 'I usually wake up at six and go to school at seven.',
-        'sample_question': 'What time do you wake up?',
-        'expected_answer': 'I wake up at six.',
-        'sentence_words': ['I', 'wake', 'up', 'at', 'six', '.'],
-        'exercise_text_vi': 'Sắp xếp các từ để tạo câu đúng: I wake up at six.',
-        'exercise_text_en': 'Arrange the words to make the correct sentence: I wake up at six.',
-        'tips': ['Use “at + time” to say the exact time.', 'Use “usually” for regular habits.'],
-    }
-]
-
-
 def get_db():
     conn = sqlite3.connect(DATA_FILE, timeout=30)
     conn.execute('PRAGMA busy_timeout = 30000')
@@ -868,83 +706,10 @@ def init_db():
     conn.execute('UPDATE users SET average_score = 0 WHERE average_score IS NULL')
 
     use_demo_data = not vercel_auth_enabled()
-    user_count = conn.execute('SELECT COUNT(*) as c FROM users').fetchone()['c']
-    if user_count == 0 and use_demo_data:
-        conn.execute(
-            'INSERT INTO users (full_name, username, email, password, role, class_name, is_active, total_points, average_score) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            ('Lan Nguyen', 'lannguyen', 'student@school.com', '123456', 'student', '7A', 1, 0, 0)
-        )
+    if use_demo_data:
+        from dev_seed_data import seed_demo_data
 
-    teacher_count = conn.execute("SELECT COUNT(*) AS count FROM users WHERE role = 'teacher'").fetchone()['count']
-    if teacher_count == 0 and use_demo_data:
-        for teacher in TEACHER_ACCOUNTS:
-            conn.execute(
-                'INSERT INTO users (full_name, username, email, password, role, class_name, is_active, total_points, average_score) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                (
-                    teacher['full_name'],
-                    teacher['username'],
-                    teacher['email'],
-                    teacher['password'],
-                    'teacher',
-                    'English',
-                    1,
-                    0,
-                    0,
-                )
-            )
-    elif teacher_count and use_demo_data:
-        legacy_teacher = conn.execute(
-            "SELECT id FROM users WHERE role = 'teacher' AND username = 'mrhuy' ORDER BY id LIMIT 1"
-        ).fetchone()
-        if legacy_teacher:
-            teacher = TEACHER_ACCOUNTS[0]
-            conn.execute(
-                'UPDATE users SET full_name = ?, username = ?, password = ?, class_name = ? WHERE id = ?',
-                (
-                    teacher['full_name'],
-                    teacher['username'],
-                    teacher['password'],
-                    'English',
-                    legacy_teacher['id'],
-                )
-            )
-
-    lesson_count = conn.execute('SELECT COUNT(*) as c FROM lessons').fetchone()['c']
-    if lesson_count == 0 and use_demo_data:
-        for item in LESSONS:
-            conn.execute(
-                '''
-                INSERT INTO lessons (
-                    title_en, title_vi, level, class_level, topic_en, topic_vi, goal_en, goal_vi,
-                    video_url, vocabulary, dialogue, sample_question, speaking_question, expected_answer,
-                    sentence_words, exercise_text_vi, exercise_text_en, task_3_text, task_4_text, week_number, open_date, close_date
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''',
-                (
-                    item['title'],
-                    item['title_vi'],
-                    item['level'],
-                    item.get('class_level') or '6',
-                    item['topic_en'],
-                    item['topic_vi'],
-                    item['goal_en'],
-                    item['goal_vi'],
-                    item['video'],
-                    ','.join(item['vocabulary']),
-                    item['dialogue'],
-                    item['sample_question'],
-                    item['sample_question'],
-                    item['expected_answer'],
-                    ','.join(item['sentence_words']),
-                    item['exercise_text_vi'],
-                    item['exercise_text_en'],
-                    'Ghi âm (Tối đa file ghi âm là 1 phút)',
-                    'Quay video ngắn cuộc hội thoại giới thiệu về người bạn mới. (Video có độ dài tối đa là 30 giây)',
-                    (item.get('week_number') or 1),
-                    item.get('open_date') or '2026-10-20',
-                    item.get('close_date') or '2026-10-27',
-                )
-            )
+        seed_demo_data(conn)
 
     conn.commit()
     conn.close()
