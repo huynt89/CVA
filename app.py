@@ -4206,6 +4206,25 @@ def teacher_accounts():
     )
 
 
+@app.route('/teacher/accounts/sync', methods=['POST'])
+def teacher_accounts_sync():
+    user = require_login()
+    if not is_headteacher(user):
+        return redirect(url_for('dashboard') if user else url_for('login'))
+    try:
+        accounts = read_teacher_accounts_from_sheet()
+        set_session_message(
+            'teacher_accounts_notice',
+            f'Teacher list synced successfully ({len(accounts)} accounts loaded from Google Sheets).',
+        )
+        set_session_message('teacher_accounts_success', True)
+    except Exception as exc:
+        logger.exception('Could not sync teacher accounts from Google Sheets.')
+        set_session_message('teacher_accounts_notice', f'Teacher sync failed: {exc}')
+        set_session_message('teacher_accounts_success', False)
+    return redirect(url_for('teacher_accounts'))
+
+
 @app.route('/teacher/accounts/new', methods=['GET', 'POST'])
 def teacher_account_new():
     user = require_login()

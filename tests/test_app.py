@@ -2003,6 +2003,8 @@ class AppFeatureTests(unittest.TestCase):
                 self.assertIn('Teacher management', page)
                 self.assertNotIn('Head Teacher', page)
                 self.assertNotIn('password', page.lower())
+                self.assertIn('Sync Teacher list with Google Sheets', page)
+                self.assertIn('🧑‍🏫', page)
 
         with app_module.app.test_client() as client:
             with client.session_transaction() as browser_session:
@@ -2070,6 +2072,40 @@ class AppFeatureTests(unittest.TestCase):
                 'original_username': '',
             },
         )
+
+    def test_teacher_account_sync_refreshes_sheet_list_and_reports_success(self):
+        accounts = [
+            {
+                'full_name': 'Teacher One',
+                'username': 'teacherone',
+                'email': 'teacherone@example.test',
+                'class_name': '',
+                'status': 'active',
+                'is_active': True,
+            },
+            {
+                'full_name': 'Teacher Two',
+                'username': 'teachertwo',
+                'email': 'teachertwo@example.test',
+                'class_name': '',
+                'status': 'active',
+                'is_active': True,
+            },
+        ]
+        with patch.object(app_module, 'is_headteacher', return_value=True), patch.object(
+            app_module, 'read_teacher_accounts_from_sheet', return_value=accounts
+        ) as read_accounts:
+            with app_module.app.test_client() as client:
+                response = client.post('/teacher/accounts/sync')
+                self.assertEqual(response.status_code, 302)
+                page_response = client.get('/teacher/accounts')
+
+        self.assertEqual(page_response.status_code, 200)
+        self.assertIn(
+            'Teacher list synced successfully (2 accounts loaded from Google Sheets).',
+            page_response.get_data(as_text=True),
+        )
+        self.assertEqual(read_accounts.call_count, 2)
 
     def test_teacher_sidebar_link_is_hidden_from_regular_teachers(self):
         conn = app_module.get_db()
