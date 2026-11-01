@@ -1623,6 +1623,37 @@ class AppFeatureTests(unittest.TestCase):
         tokens = app_module.get_cloud_tokens(user_id)
         self.assertEqual(tokens, {'access_token': 'signed-vercel-session'})
 
+    def test_local_vercel_auth_mode_uses_cloud_sign_in_and_hides_registration(self):
+        remote_account = {
+            'authenticated': True,
+            'uid': 'cloudstudent@example.test',
+            'email': 'cloudstudent@example.test',
+            'role': 'student',
+            'username': 'cloudstudent',
+            'full_name': 'Cloud Student',
+            'class_name': '6A',
+            'access_token': 'signed-vercel-session',
+        }
+        with patch.object(app_module, 'IS_FROZEN', False), patch.dict(
+            os.environ, {'ENG_AUTH_MODE': 'vercel'}
+        ), patch.object(
+            app_module, 'call_vercel_api', return_value=remote_account
+        ) as remote_login:
+            with app_module.app.test_client() as client:
+                response = client.post('/login', data={
+                    'username': 'cloudstudent',
+                    'password': '123456',
+                    'role': 'student',
+                })
+                self.assertEqual(response.status_code, 302)
+                login_page = client.get('/login').get_data(as_text=True)
+                self.assertNotIn('id="registerLink"', login_page)
+            remote_login.assert_called_once_with(
+                'login',
+                {'username': 'cloudstudent', 'password': '123456', 'role': 'student'},
+                timeout=30,
+            )
+
     def test_vercel_sign_in_creates_local_profile_for_sheet_account(self):
         remote_account = {
             'authenticated': True,

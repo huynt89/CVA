@@ -98,6 +98,11 @@ def remote_ai_enabled():
     return os.getenv('ENABLE_REMOTE_AI', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
 
 
+def vercel_auth_enabled():
+    auth_mode = os.getenv('ENG_AUTH_MODE', '').strip().lower()
+    return IS_FROZEN or auth_mode in {'vercel', 'cloud'}
+
+
 def call_vercel_api(endpoint, payload, access_token=None, timeout=30):
     if not VERCEL_API_BASE_URL or (endpoint != 'login' and not access_token):
         logger.warning('Vercel API call skipped: endpoint or session token is not configured.')
@@ -115,6 +120,14 @@ def call_vercel_api(endpoint, payload, access_token=None, timeout=30):
     except requests.RequestException as exc:
         logger.warning('Vercel API %s request failed: %s', endpoint, exc)
         return None
+
+    if endpoint == 'login':
+        request_id = response.headers.get('x-vercel-id', 'unavailable')
+        logger.info(
+            'Vercel sign-in endpoint responded with HTTP %s (request id %s).',
+            response.status_code,
+            request_id,
+        )
 
     if response.status_code != 200 and endpoint != 'login':
         logger.warning('Vercel API %s returned HTTP %s.', endpoint, response.status_code)
@@ -2780,7 +2793,7 @@ def index():
         return redirect(url_for('dashboard'))
     return render_template(
         'login.html',
-        is_frozen=IS_FROZEN,
+        is_frozen=vercel_auth_enabled(),
         registration_success=session.pop('registration_success', None),
         warning=session.pop('google_sync_warning', None),
     )
@@ -2794,7 +2807,7 @@ def login():
         password = request.form.get('password', '')
         role = (request.form.get('role', 'student') or 'student').strip().lower()
 
-        if IS_FROZEN:
+        if vercel_auth_enabled():
             login_result = call_vercel_api(
                 'login',
                 {'username': raw_input.lower(), 'password': password, 'role': role},
@@ -2814,7 +2827,11 @@ def login():
                     if status_code == 0
                     else str((login_result or {}).get('error') or 'Username, password, or account role is incorrect.')
                 )
-                return render_template('login.html', is_frozen=True, error=error), 401
+                return render_template(
+                    'login.html',
+                    is_frozen=vercel_auth_enabled(),
+                    error=error,
+                ), 401
 
             conn = get_db()
             user = conn.execute(
@@ -2912,7 +2929,7 @@ def login():
 
     return render_template(
         'login.html',
-        is_frozen=IS_FROZEN,
+        is_frozen=vercel_auth_enabled(),
         registration_success=session.pop('registration_success', None),
         warning=session.pop('google_sync_warning', None),
     )
@@ -2920,7 +2937,7 @@ def login():
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    if IS_FROZEN:
+    if vercel_auth_enabled():
         return redirect(url_for('login'))
     if request.method == 'POST':
         role = (request.form.get('role') or 'student').strip().lower()

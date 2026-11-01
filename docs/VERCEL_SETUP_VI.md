@@ -18,6 +18,36 @@ khoản và mật khẩu dạng hash. Không đưa API key vào ứng dụng Win
    Drive. Vercel xác nhận chủ sở hữu file, đặt quyền xem qua liên kết và đọc
    file Drive để gọi Groq transcription.
 
+### Kiểm tra đăng nhập online trước khi build EXE
+
+Chạy ứng dụng local qua đúng API Vercel như bản EXE để không nhầm kết quả đăng
+nhập SQLite local với kết quả xác thực Google Sheet:
+
+```powershell
+$env:ENG_AUTH_MODE = "vercel"
+.\.venv\Scripts\python.exe app.py
+```
+
+Sau khi kiểm tra, tắt chế độ này trong cửa sổ PowerShell:
+
+```powershell
+Remove-Item Env:\ENG_AUTH_MODE
+```
+
+API Production phải được deploy từ mã nguồn mới trước khi thử đăng nhập. Kiểm
+tra phiên bản route mà không gửi thông tin tài khoản:
+
+```powershell
+Invoke-RestMethod https://cva-liard.vercel.app/api/login
+```
+
+Kết quả mong đợi có `service: login` và `version: 2026-11-01.1`. Nếu nhận
+`POST is required`, route Production vẫn là bản cũ; hãy kiểm tra Production
+Deployment trên Vercel đã lấy commit mới nhất có `vercel/api/login.ts`, rồi
+redeploy. Nếu phiên bản đã đúng nhưng đăng nhập vẫn bị từ chối, kiểm tra đúng
+dòng trong `Student`: username/email, role, `status=active`, và hash scrypt ở
+cột `password`. Không dùng mật khẩu rõ hoặc giá trị `scrypt$123456`.
+
 > Bản desktop có thể bị phân tích hoặc giả lập. Không có cách đáng tin cậy để
 > chứng minh server request chỉ đến từ EXE chính chủ. Bảo vệ API bằng mật khẩu,
 > quyền `role`, giới hạn chi phí và theo dõi usage; không dựa vào bí mật nhúng
