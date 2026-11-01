@@ -3584,8 +3584,8 @@ textarea {
 }
 
 .brand-mark {
-    width: 72px;
-    height: 72px;
+    width: 96px;
+    height: 96px;
     margin-bottom: auto;
     border-radius: 20px;
     background: rgba(255, 255, 255, 0.14);
@@ -3781,8 +3781,8 @@ textarea {
     }
 
     .brand-mark {
-        width: 56px;
-        height: 56px;
+        width: 68px;
+        height: 68px;
         margin-bottom: 24px;
         border-radius: 16px;
     }

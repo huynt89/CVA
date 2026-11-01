@@ -1587,6 +1587,54 @@ class AppFeatureTests(unittest.TestCase):
 
         self.assertTrue(verify_password_hash('new-password', written_row[3]))
 
+    def test_headteacher_profile_sync_updates_headteacher_sheet(self):
+        worksheet = Mock()
+        worksheet.get_all_values.return_value = [
+            ['full_name', 'username', 'password', 'email', 'role', 'status'],
+            ['Director', 'director', 'old-hash', 'director@example.test', 'headteacher', 'active'],
+        ]
+        spreadsheet = Mock()
+        spreadsheet.worksheet.return_value = worksheet
+        client = Mock()
+        client.open_by_key.return_value = spreadsheet
+        user = {
+            'id': 42,
+            'full_name': 'Director',
+            'username': 'director',
+            'email': 'director@example.test',
+            'role': 'teacher',
+        }
+        profile = {
+            'full_name': 'Updated Director',
+            'username': 'updateddirector',
+            'email': 'updateddirector@example.test',
+        }
+
+        with app_module.app.test_request_context('/teacher/profile'):
+            app_module.session['headteacher_claim_user_id'] = 42
+            app_module.session['headteacher_user_id'] = 42
+            with patch.object(app_module, 'vercel_auth_enabled', return_value=False), patch.object(
+                app_module, 'get_google_credentials', return_value='credentials'
+            ), patch.object(
+                app_module.gspread, 'authorize', return_value=client
+            ), patch.dict(os.environ, {'GOOGLE_SHEET_ID': 'test-sheet-id'}):
+                synced, error = app_module.sync_teacher_profile_to_sheet(
+                    user, profile, 'new-password'
+                )
+
+        self.assertTrue(synced)
+        self.assertEqual(error, '')
+        spreadsheet.worksheet.assert_called_once_with('HeadTeacher')
+        written_row = worksheet.update.call_args.kwargs['values'][0]
+        self.assertEqual(written_row[0:6:3], [
+            'Updated Director', 'updateddirector@example.test'
+        ])
+        self.assertEqual(written_row[1], 'updateddirector')
+        self.assertEqual(written_row[4:6], ['headteacher', 'active'])
+        from tools.generate_password_hash import verify_password_hash
+
+        self.assertTrue(verify_password_hash('new-password', written_row[2]))
+
     def test_cloud_teacher_profile_sync_uses_authenticated_users_operation(self):
         user = {
             'full_name': 'Teacher',
@@ -1890,6 +1938,7 @@ class AppFeatureTests(unittest.TestCase):
             'uid': 'huynt@abc.com',
             'email': 'huynt@abc.com',
             'role': 'teacher',
+            'is_headteacher': True,
             'username': 'huynt',
             'full_name': 'Mr.Huy',
             'access_token': 'headteacher-session',
@@ -1952,7 +2001,7 @@ class AppFeatureTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 page = response.get_data(as_text=True)
                 self.assertIn('Teacher management', page)
-                self.assertIn('Head Teacher', page)
+                self.assertNotIn('Head Teacher', page)
                 self.assertNotIn('password', page.lower())
 
         with app_module.app.test_client() as client:
@@ -2035,6 +2084,64 @@ class AppFeatureTests(unittest.TestCase):
             response = client.get('/teacher/students')
         self.assertEqual(response.status_code, 200)
         self.assertNotIn('>Teacher</span>', response.get_data(as_text=True))
+
+    def test_headteacher_sheet_login_grants_teacher_menu_without_username_assumption(self):
+        remote_account = {
+            'authenticated': True,
+            'uid': 'director@example.test',
+            'email': 'director@example.test',
+            'role': 'teacher',
+            'is_headteacher': True,
+            'username': 'director',
+            'full_name': 'School Director',
+            'access_token': 'headteacher-sheet-token',
+        }
+        with patch.object(app_module, 'IS_FROZEN', True), patch.object(
+            app_module, 'call_vercel_api', return_value=remote_account
+        ), patch.object(app_module, 'read_teacher_accounts_from_sheet', return_value=[]):
+            with app_module.app.test_client() as client:
+                login_response = client.post('/login', data={
+                    'username': 'director',
+                    'password': '123456',
+                    'role': 'teacher',
+                })
+                self.assertEqual(login_response.status_code, 302)
+                with client.session_transaction() as browser_session:
+                    self.assertEqual(
+                        browser_session['headteacher_user_id'],
+                        browser_session['user_id'],
+                    )
+                page_response = client.get('/teacher/accounts')
+
+        self.assertEqual(page_response.status_code, 200)
+        page = page_response.get_data(as_text=True)
+        self.assertIn('href="/teacher/accounts"><span class="nav-label">Teacher</span>', page)
+        self.assertNotIn('🧑‍🏫', page)
+
+    def test_cloud_teacher_named_huynt_without_headteacher_claim_is_not_admin(self):
+        remote_account = {
+            'authenticated': True,
+            'uid': 'regular-huynt@example.test',
+            'email': 'regular-huynt@example.test',
+            'role': 'teacher',
+            'is_headteacher': False,
+            'username': 'huynt',
+            'full_name': 'Regular Teacher',
+            'access_token': 'regular-teacher-token',
+        }
+        with patch.object(app_module, 'IS_FROZEN', True), patch.object(
+            app_module, 'call_vercel_api', return_value=remote_account
+        ):
+            with app_module.app.test_client() as client:
+                login_response = client.post('/login', data={
+                    'username': 'huynt',
+                    'password': '123456',
+                    'role': 'teacher',
+                })
+                self.assertEqual(login_response.status_code, 302)
+                response = client.get('/teacher/accounts')
+
+        self.assertEqual(response.status_code, 302)
 
     def test_login_form_accepts_username_and_password(self):
         with app_module.app.test_client() as client:

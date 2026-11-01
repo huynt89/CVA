@@ -1,14 +1,16 @@
 # Cấu hình Vercel, API key và đăng nhập Google Sheet
 
-Vercel giữ các secret và chạy API; tab `Student` hiện có chứa thông tin tài
-khoản và mật khẩu dạng hash. Không đưa API key vào ứng dụng Windows.
+Vercel giữ các secret và chạy API; tab `Users` chứa tài khoản học sinh/giáo
+viên, còn tab `HeadTeacher` chứa tài khoản quản trị. Mật khẩu lưu dạng hash.
+Không đưa API key vào ứng dụng Windows.
 
 ## Luồng hoạt động
 
 1. Người dùng nhập username hoặc email, mật khẩu và role trong ứng dụng.
 2. Ứng dụng gửi thông tin đăng nhập đến `/api/login` trên Vercel qua HTTPS.
-   Vercel đọc tab `Student`, tìm username/email, kiểm tra scrypt hash, role và
-   trạng thái.
+   Với mục Student, Vercel xác thực role `student` từ tab `Users`. Với mục
+   Teacher, Vercel tìm role `teacher` trong `Users` và role `headteacher` trong
+   `HeadTeacher`, rồi kiểm tra hash mật khẩu và trạng thái.
 3. Nếu đăng nhập thành công, Vercel cấp JWT ký bằng `APP_SESSION_SECRET`, sống
    trong 4 giờ. Ứng dụng tự tạo/cập nhật hồ sơ SQLite cục bộ để gắn dữ liệu học
    tập với email và role trên Sheet, rồi giữ token trong SQLite để gọi API.
@@ -41,11 +43,11 @@ tra phiên bản route mà không gửi thông tin tài khoản:
 Invoke-RestMethod https://cva-liard.vercel.app/api/login
 ```
 
-Kết quả mong đợi có `service: login` và `version: 2026-11-01.1`. Nếu nhận
+Kết quả mong đợi có `service: login` và `version: 2026-11-01.2`. Nếu nhận
 `POST is required`, route Production vẫn là bản cũ; hãy kiểm tra Production
 Deployment trên Vercel đã lấy commit mới nhất có `vercel/api/login.ts`, rồi
 redeploy. Nếu phiên bản đã đúng nhưng đăng nhập vẫn bị từ chối, kiểm tra đúng
-dòng trong `Student`: username/email, role, `status=active`, và hash scrypt ở
+dòng trong `Users`: username/email, role, `status=active`, và hash scrypt ở
 cột `password`. Không dùng mật khẩu rõ hoặc giá trị `scrypt$123456`.
 
 > Bản desktop có thể bị phân tích hoặc giả lập. Không có cách đáng tin cậy để
@@ -53,10 +55,11 @@ cột `password`. Không dùng mật khẩu rõ hoặc giá trị `scrypt$123456
 > quyền `role`, giới hạn chi phí và theo dõi usage; không dựa vào bí mật nhúng
 > trong ứng dụng.
 
-## A. Dùng tab `Student` hiện có
+## A. Dùng tab `Users`
 
-Không cần tạo sheet `Users`. Giữ các cột dữ liệu hiện có trong tab `Student` và
-đảm bảo có các header:
+Đổi tên tab tài khoản hiện có từ `Student` thành `Users` (không tạo tab mới nếu
+muốn giữ các tài khoản hiện có). Tab `Users` chứa cả giáo viên và học sinh.
+Đảm bảo có các header:
 
 ```text
 full_name | username | email | password | role | class_name | status
@@ -64,17 +67,31 @@ full_name | username | email | password | role | class_name | status
 
 - Bạn đã thêm cột `password` sau `username`; có thể giữ vị trí đó. Cột phải chứa
   **scrypt hash**, không phải mật khẩu dạng rõ.
-- Mỗi dòng tài khoản cần có `username`, `email`, `role`, `password`, `status`.
+- Mỗi dòng tài khoản học sinh hoặc giáo viên cần có `username`, `email`,
+  `role`, `password`, `status`.
 - `role` dùng `student` hoặc `teacher`. Dòng giáo viên bạn đã thêm sẽ được giữ
-  lại khi ứng dụng đồng bộ danh sách Student.
+  lại khi ứng dụng đồng bộ danh sách.
 - `status` dùng `active` để cho phép đăng nhập, hoặc `locked` để khóa.
 - Bản Windows đóng gói không bật tự đăng ký. Giáo viên/quản trị viên thêm
-  tài khoản mới trực tiếp vào tab `Student`, gồm username, email, hash scrypt,
+  tài khoản mới trực tiếp vào tab `Users`, gồm username, email, hash scrypt,
   role, lớp và trạng thái `active`.
-- Vercel xác thực trực tiếp từ `Student`; lần đăng nhập thành công đầu tiên sẽ
+- Vercel xác thực trực tiếp từ Sheet; lần đăng nhập thành công đầu tiên sẽ
   tự tạo hồ sơ cục bộ theo email, username, tên, lớp và role từ Sheet. Không
   cần tạo trước cùng một hồ sơ trong SQLite.
-- Khi đồng bộ sheet, ứng dụng giữ lại hash mật khẩu và các dòng giáo viên.
+- Đồng bộ và đăng nhập đọc cả tài khoản `student` và `teacher`; thao tác đồng bộ
+  không loại bỏ dòng giáo viên. Mục **My Account** cập nhật tên, username, email
+  và mật khẩu (nếu đổi) ngược vào dòng giáo viên trong `Users`.
+- Tài khoản **Head Teacher** được lưu riêng trong tab `HeadTeacher`, với các cột
+  `full_name`, `username`, `password`, `email`, `role`, `status`; role phải là
+  `headteacher`, status phải là `active`, và `password` phải là scrypt hash.
+  Tab này cần được tạo trong cùng Google Spreadsheet với `Users`. Tài khoản
+  đăng nhập qua mục **Teacher** và được cấp quyền quản lý các tài khoản role
+  `teacher` trong tab `Users`.
+- Chỉ tài khoản xác thực từ tab `HeadTeacher` thấy menu **Teacher**. Hồ sơ
+  Head Teacher trong **My Account** cập nhật vào tab `HeadTeacher`; hồ sơ giáo
+  viên thông thường tiếp tục cập nhật vào `Users`. Nếu đang chuyển tài khoản
+  Head Teacher cũ, hãy chuyển dòng đó khỏi `Users` sau khi tạo và kiểm tra dòng
+  tương ứng trong `HeadTeacher`.
 
 ### Tạo mật khẩu hash
 
@@ -85,7 +102,7 @@ py tools\generate_password_hash.py
 ```
 
 Nhập mật khẩu hai lần tại prompt. Mật khẩu không được echo ra terminal. Dán
-hash được in vào cột `password` của đúng dòng trong tab `Student`. Lặp lại với
+hash được in vào cột `password` của đúng dòng trong tab `Users`. Lặp lại với
 tài khoản giáo viên. Không ghi mật khẩu dạng rõ vào Sheet và không commit hash
 hay mật khẩu vào GitHub.
 
@@ -96,7 +113,7 @@ Nếu log Vercel báo `password_does_not_match_scrypt_hash` hoặc
 .\.venv\Scripts\python.exe tools\generate_password_hash.py verify
 ```
 
-Paste hash lấy trực tiếp từ ô `password` của đúng dòng Student, sau đó nhập
+Paste hash lấy trực tiếp từ ô `password` của đúng dòng Users, sau đó nhập
 mật khẩu mà bạn đang thử đăng nhập. Cả hai giá trị đều được nhập ẩn; chương
 trình chỉ báo `MATCH` hoặc `NO MATCH`, không in/lưu chúng. Nếu `NO MATCH`,
 chọn `generate` (hoặc bỏ tham số), tạo hash bằng đúng mật khẩu mong muốn rồi
@@ -115,7 +132,7 @@ scrypt hash, không lưu mật khẩu rõ), chạy tại máy tin cậy. `.env` 
 
 Thay tên, username, email, role (`student` hoặc `teacher`) và lớp theo tài khoản
 cần tạo. Script kiểm tra username/email trùng, hiển thị thông tin tài khoản
-không nhạy cảm, rồi yêu cầu gõ `APPLY` trước khi thêm dòng vào tab `Student`.
+không nhạy cảm, rồi yêu cầu gõ `APPLY` trước khi thêm dòng vào tab `Users`.
 Chỉ hash scrypt được ghi vào cột `password`; đăng nhập vẫn kiểm tra username,
 mật khẩu `123456`, role và trạng thái `active`. Mật khẩu chung này yếu, chỉ
 nên dùng tạm thời hoặc cho tài khoản thử nghiệm. Lệnh ghi trực tiếp vào Google
@@ -224,7 +241,7 @@ Sau khi deploy, sao chép domain production dạng
 ## E. Kiểm tra đăng nhập và API
 
 1. Đảm bảo tài khoản có username, email, password hash, role và trạng thái
-   `active` trong tab `Student`.
+   `active` trong tab `Users`.
 2. Mở ứng dụng desktop và đăng nhập. Tài khoản không tồn tại, sai mật khẩu,
    role không khớp hoặc có trạng thái `locked` phải bị từ chối.
 3. Giáo viên thử đọc/ghi các sheet `Student`, `Lesson`, `Practice`; học sinh

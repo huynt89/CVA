@@ -6,6 +6,7 @@ export type AuthenticatedUser = {
   id: string;
   email: string;
   role: AppRole;
+  is_headteacher?: boolean;
 };
 
 export class HttpError extends Error {
@@ -66,6 +67,7 @@ export function createSessionToken(user: AuthenticatedUser) {
     sub: user.id,
     email: user.email,
     role: user.role,
+    is_headteacher: user.is_headteacher === true,
     iat: now,
     exp: now + 4 * 60 * 60,
   }));
@@ -95,6 +97,7 @@ function verifySessionToken(token: string): AuthenticatedUser {
       sub?: string;
       email?: string;
       role?: string;
+      is_headteacher?: boolean;
       exp?: number;
     };
     if (
@@ -104,10 +107,16 @@ function verifySessionToken(token: string): AuthenticatedUser {
       || !Number.isFinite(payload.exp)
       || Number(payload.exp) <= Math.floor(Date.now() / 1000)
       || (payload.role !== "teacher" && payload.role !== "student")
+      || (payload.is_headteacher === true && payload.role !== "teacher")
     ) {
       throw new HttpError(401, "The Vercel session token is invalid or expired.");
     }
-    return { id: payload.sub, email: payload.email, role: payload.role };
+    return {
+      id: payload.sub,
+      email: payload.email,
+      role: payload.role,
+      is_headteacher: payload.is_headteacher === true,
+    };
   } catch (error) {
     if (error instanceof HttpError) throw error;
     throw new HttpError(401, "The Vercel session token is invalid.");

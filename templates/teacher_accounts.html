@@ -17,7 +17,7 @@
             <nav>
                 <a href="{{ url_for('dashboard') }}"><span class="nav-icon">🏠</span><span class="nav-label">{{ t('dashboard') }}</span></a>
                 <a href="{{ url_for('teacher_students') }}"><span class="nav-icon">👥</span><span class="nav-label">{{ t('student') }}</span></a>
-                <a class="active" href="{{ url_for('teacher_accounts') }}"><span class="nav-icon">🧑‍🏫</span><span class="nav-label">Teacher</span></a>
+                <a class="active" href="{{ url_for('teacher_accounts') }}"><span class="nav-label">Teacher</span></a>
                 <a href="{{ url_for('teacher_lessons') }}"><span class="nav-icon">📘</span><span class="nav-label">{{ t('lessons') }}</span></a>
                 <a href="{{ url_for('practice_page') }}"><span class="nav-icon">🎤</span><span class="nav-label">Practice</span></a>
                 <a href="{{ url_for('teacher_profile') }}"><span class="nav-icon">👤</span><span class="nav-label">My account</span></a>
@@ -73,9 +73,6 @@
                                 <td>{{ account.class_name or '—' }}</td>
                                 <td>{{ 'Active' if account.is_active else 'Locked' }}</td>
                                 <td>
-                                    {% if account.username|lower == 'huynt' %}
-                                    <span class="account-role-badge">Head Teacher</span>
-                                    {% else %}
                                     <div class="row-actions compact-icon-actions">
                                         <a class="icon-action-btn edit-icon-btn" href="{{ url_for('teacher_account_edit', username=account.username) }}" title="Edit teacher" aria-label="Edit teacher">✎</a>
                                         <form method="POST" action="{{ url_for('teacher_account_toggle', username=account.username) }}" style="display:inline;">
@@ -85,7 +82,6 @@
                                             <button class="icon-action-btn delete-icon-btn" type="submit" title="Delete teacher" aria-label="Delete teacher">🗑</button>
                                         </form>
                                     </div>
-                                    {% endif %}
                                 </td>
                             </tr>
                             {% else %}

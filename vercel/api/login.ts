@@ -14,10 +14,11 @@ type UserRecord = {
   role?: string;
   status?: string;
   is_active?: string;
+  is_headteacher?: boolean;
 };
 
 const attempts = new Map<string, { windowStartedAt: number; count: number }>();
-const loginApiVersion = "2026-11-01.2";
+const loginApiVersion = "2026-11-01.3";
 
 function rejectLogin(reason: string): never {
   console.warn(`Sign-in rejected (${reason}).`);
@@ -84,7 +85,7 @@ function normalizeAccountValue(value: unknown) {
     .toLowerCase();
 }
 
-async function findUser(identifier: string, requestedRole: string): Promise<UserRecord | undefined> {
+async function readAccounts(sheetName: "Users" | "HeadTeacher"): Promise<UserRecord[]> {
   const spreadsheetId = process.env.GOOGLE_SHEET_ID?.trim();
   if (!spreadsheetId) throw new HttpError(503, "GOOGLE_SHEET_ID is not configured.");
   const credentials = googleServiceAccountCredentials();
@@ -96,10 +97,10 @@ async function findUser(identifier: string, requestedRole: string): Promise<User
   const sheets = googleApis.sheets({ version: "v4", auth });
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: "'Users'!A:AZ",
+    range: `'${sheetName}'!A:AZ`,
   });
   const values = response.data.values ?? [];
-  if (values.length < 2) throw new HttpError(403, "This account is not authorized.");
+  if (values.length < 2) return [];
   const headers = values[0].map(normalizeHeader);
   const columnIndex = (...names: string[]) =>
     headers.findIndex((header) => names.includes(header));
@@ -113,36 +114,48 @@ async function findUser(identifier: string, requestedRole: string): Promise<User
   const activeIndex = columnIndex("isactive", "active");
   const statusIndex = columnIndex("status", "accountstatus");
   if ([emailIndex, roleIndex].some((index) => index < 0) || usernameIndex < 0) {
-    throw new HttpError(503, "The Users worksheet must contain username, email, and role columns.");
+    throw new HttpError(503, `The ${sheetName} worksheet must contain username, email, and role columns.`);
   }
   if (passwordHashIndex < 0 && passwordIndex < 0) {
-    throw new HttpError(503, "The Users worksheet must contain username, email, password, and role columns.");
+    throw new HttpError(503, `The ${sheetName} worksheet must contain username, email, password, and role columns.`);
+  }
+  if (sheetName === "HeadTeacher" && (fullNameIndex < 0 || statusIndex < 0)) {
+    throw new HttpError(503, "The HeadTeacher worksheet must also contain full_name and status columns.");
   }
 
-  const matchingRows = values.slice(1).filter((cells) => {
-    const rowUsername = normalizeAccountValue(cells[usernameIndex]);
-    const rowEmail = normalizeAccountValue(cells[emailIndex]);
-    return rowUsername === identifier || rowEmail === identifier;
-  });
-  if (matchingRows.length > 1) {
-    throw new HttpError(409, "More than one account matches this username. Contact your teacher.");
-  }
-  const row = matchingRows[0];
-  if (!row) return undefined;
-  const passwordHash = passwordHashIndex >= 0 ? String(row[passwordHashIndex] ?? "").trim() : "";
-  const password = passwordIndex >= 0 ? String(row[passwordIndex] ?? "").trim() : "";
-  const active = activeIndex >= 0 ? String(row[activeIndex] ?? "").trim() : "";
-  const status = statusIndex >= 0 ? String(row[statusIndex] ?? "").trim() : "";
-  return {
+  return values.slice(1).map((row) => ({
     email: String(row[emailIndex] ?? ""),
     username: String(row[usernameIndex] ?? ""),
     full_name: fullNameIndex >= 0 ? String(row[fullNameIndex] ?? "") : "",
     class_name: classNameIndex >= 0 ? String(row[classNameIndex] ?? "") : "",
-    password_hash: passwordHash,
-    password,
+    password_hash: passwordHashIndex >= 0 ? String(row[passwordHashIndex] ?? "").trim() : "",
+    password: passwordIndex >= 0 ? String(row[passwordIndex] ?? "").trim() : "",
     role: normalizeAccountValue(row[roleIndex]),
-    is_active: normalizeAccountValue(active || status || "true"),
-  };
+    is_active: normalizeAccountValue(
+      String((activeIndex >= 0 ? row[activeIndex] : "") || (statusIndex >= 0 ? row[statusIndex] : "") || "true"),
+    ),
+    is_headteacher: sheetName === "HeadTeacher",
+  }));
+}
+
+async function findUser(identifier: string, requestedRole: string): Promise<UserRecord | undefined> {
+  const [users, headteachers] = await Promise.all([
+    readAccounts("Users"),
+    requestedRole === "teacher" ? readAccounts("HeadTeacher") : Promise.resolve([]),
+  ]);
+  const matchingRows = (accounts: UserRecord[], allowedRoles: string[]) => accounts.filter((account) => {
+    const accountRole = normalizeAccountValue(account.role);
+    const matchesIdentifier = normalizeAccountValue(account.username) === identifier
+      || normalizeAccountValue(account.email) === identifier;
+    return matchesIdentifier && allowedRoles.includes(accountRole);
+  });
+  const headteacherMatches = matchingRows(headteachers, ["headteacher"]);
+  const teacherMatches = matchingRows(users, [requestedRole]);
+  const matches = headteacherMatches.length ? headteacherMatches : teacherMatches;
+  if (matches.length > 1) {
+    throw new HttpError(409, "More than one account matches this username. Contact your teacher.");
+  }
+  return matches[0];
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -177,8 +190,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     checkLoginLimit(createHash("sha256").update(String(address ?? "unknown")).digest("hex"));
     const user = await findUser(identifier, requestedRole);
     if (!user) rejectLogin("account_not_found");
-    const role: "teacher" | "student" | null =
-      user?.role === "teacher" || user?.role === "student" ? user.role : null;
+    const isHeadteacher = user?.is_headteacher === true && user.role === "headteacher";
+    const role: "teacher" | "student" | null = isHeadteacher
+      ? "teacher"
+      : user?.role === "teacher" || user?.role === "student"
+        ? user.role
+        : null;
     if (!role || role !== requestedRole) rejectLogin("account_role_mismatch");
     const email = normalizeAccountValue(user?.email);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) rejectLogin("account_email_invalid");
@@ -196,7 +213,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       );
     }
 
-    const normalizedUser = { id: email, email, role };
+    const normalizedUser = { id: email, email, role, is_headteacher: isHeadteacher };
     const accessToken = createSessionToken(normalizedUser);
     attempts.delete(createHash("sha256").update(String(address ?? "unknown")).digest("hex"));
     res.status(200).json({
@@ -204,6 +221,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       uid: normalizedUser.id,
       email: normalizedUser.email,
       role: normalizedUser.role,
+      is_headteacher: isHeadteacher,
       username: user.username ?? "",
       full_name: user.full_name ?? "",
       class_name: user.class_name ?? "",

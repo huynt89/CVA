@@ -27,9 +27,10 @@ hiện.
    tạo mới; xóa ở commit sau không xóa khỏi lịch sử Git.
 5. Commit và push mã nguồn lên repo private.
 
-## 2. Chuẩn bị tài khoản trong tab `Student`
+## 2. Chuẩn bị tài khoản trong tab `Users`
 
-1. Tiếp tục dùng tab `Student` hiện có.
+1. Đổi tên tab tài khoản hiện có từ `Student` thành `Users`, giữ nguyên dữ liệu
+   và các dòng tài khoản hiện có.
 2. Bảo đảm header có các cột `full_name`, `username`, `email`, `password`,
    `role`, `class_name`, `status`. Cột `password` đã được bạn thêm sau
    `username`.
@@ -145,8 +146,8 @@ repo public. Bản phát hành gồm `CVA-Launcher.exe`, ZIP ứng dụng,
 ## 6. Kiểm tra trước khi phân phối
 
 1. Đăng nhập trên ứng dụng Windows bằng một tài khoản giáo viên và một tài
-   khoản học sinh có trong tab `Student`.
-2. Kiểm tra giáo viên đọc/ghi `Student`, `Lesson`, `Practice`; xác nhận học
+   khoản học sinh có trong tab `Users`.
+2. Kiểm tra giáo viên đọc/ghi `Users`, `Lesson`, `Practice`; xác nhận học
    sinh không thể gọi thao tác dành riêng giáo viên.
 3. Thử gửi Practice, tải audio/video nhỏ lên Drive, xác nhận link được trả về
    và transcript được tạo qua Groq.

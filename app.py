@@ -93,6 +93,7 @@ DRIVE_FOLDER_CACHE_TTL = 300
 _drive_folder_cache = {}
 PAGE_SIZE_OPTIONS = (5, 10, 20, 50, 100)
 USER_SHEET_NAME = 'Users'
+HEADTEACHER_SHEET_NAME = 'HeadTeacher'
 
 
 def remote_ai_enabled():
@@ -105,11 +106,21 @@ def vercel_auth_enabled():
 
 
 def is_headteacher(user):
-    return bool(
-        user
-        and str(user['role'] if hasattr(user, 'keys') else user.get('role', '')).strip().lower() == 'teacher'
-        and normalize_username(user['username'] if hasattr(user, 'keys') else user.get('username', '')) == 'huynt'
-    )
+    if not user:
+        return False
+    user_fields = set(user.keys()) if hasattr(user, 'keys') else set(user)
+    user_id = user['id'] if 'id' in user_fields else None
+    role = str(user['role'] if 'role' in user_fields else '').strip().lower()
+    if role != 'teacher':
+        return False
+    if (
+        user_id is not None
+        and has_request_context()
+        and session.get('headteacher_claim_user_id') == user_id
+    ):
+        return session.get('headteacher_user_id') == user_id
+    username = user['username'] if 'username' in user_fields else ''
+    return normalize_username(username) == 'huynt'
 
 
 @app.context_processor
@@ -2842,7 +2853,7 @@ def sync_teacher_profile_to_sheet(user, profile, password=''):
         )
         if result:
             return True, ''
-        return False, 'The Users sheet could not be updated. Your account changes were not saved.'
+        return False, 'The account sheet could not be updated. Your account changes were not saved.'
 
     credentials = get_google_credentials()
     if not credentials:
@@ -2856,10 +2867,13 @@ def sync_teacher_profile_to_sheet(user, profile, password=''):
             spreadsheet = client.open_by_key(sheet_id)
         else:
             spreadsheet = client.open(sheet_name)
-        worksheet = spreadsheet.worksheet(USER_SHEET_NAME)
+        headteacher = is_headteacher(user)
+        sheet_name = HEADTEACHER_SHEET_NAME if headteacher else USER_SHEET_NAME
+        account_role = 'headteacher' if headteacher else 'teacher'
+        worksheet = spreadsheet.worksheet(sheet_name)
         values = worksheet.get_all_values()
         if len(values) < 2:
-            return False, 'The Users sheet has no account rows to update.'
+            return False, f'The {sheet_name} sheet has no account rows to update.'
 
         headers = [str(header).strip() for header in values[0]]
         normalized_headers = {
@@ -2878,8 +2892,9 @@ def sync_teacher_profile_to_sheet(user, profile, password=''):
         name_index = column('fullname', 'name')
         role_index = column('role', 'accountrole')
         password_index = column('passwordhash', 'hashedpassword', 'password')
-        if None in (email_index, username_index, name_index, role_index):
-            return False, 'The Users sheet needs full_name, username, email, and role columns.'
+        status_index = column('status', 'accountstatus')
+        if None in (email_index, username_index, name_index, role_index, status_index):
+            return False, f'The {sheet_name} sheet needs full_name, username, email, role, and status columns.'
 
         old_email = str(user.get('email') or '').strip().lower()
         old_username = str(user.get('username') or '').strip().lower()
@@ -2890,7 +2905,7 @@ def sync_teacher_profile_to_sheet(user, profile, password=''):
             if (old_email and row_email == old_email) or (old_username and row_username == old_username):
                 matches.append((row_number, row))
         if len(matches) != 1:
-            return False, 'The teacher account could not be uniquely found in the Users sheet.'
+            return False, f'The account could not be uniquely found in the {sheet_name} sheet.'
 
         matched_row_number, matched_row = matches[0]
         for row_number, row in enumerate(values[1:], start=2):
@@ -2899,11 +2914,13 @@ def sync_teacher_profile_to_sheet(user, profile, password=''):
             row_email = str(row[email_index] if email_index < len(row) else '').strip().lower()
             row_username = str(row[username_index] if username_index < len(row) else '').strip().lower()
             if row_email == profile['email'].lower() or row_username == profile['username'].lower():
-                return False, 'That username or email address is already in use in the Users sheet.'
-        if str(matched_row[role_index] if role_index < len(matched_row) else '').strip().lower() != 'teacher':
-            return False, 'The matching Users sheet row is not a teacher account.'
+                return False, f'That username or email address is already in use in the {sheet_name} sheet.'
+        if str(matched_row[role_index] if role_index < len(matched_row) else '').strip().lower() != account_role:
+            return False, f'The matching {sheet_name} row has an unexpected account role.'
+        if headteacher and str(matched_row[status_index] if status_index < len(matched_row) else '').strip().lower() != 'active':
+            return False, 'The HeadTeacher account is not active.'
         if password and password_index is None:
-            return False, 'The Users sheet has no password column to update.'
+            return False, f'The {sheet_name} sheet has no password column to update.'
 
         updated_row = list(matched_row)
         if len(updated_row) < len(headers):
@@ -2920,8 +2937,8 @@ def sync_teacher_profile_to_sheet(user, profile, password=''):
         )
         return True, ''
     except Exception as exc:
-        logger.exception('Failed to sync teacher profile to the Users sheet.')
-        return False, f'Could not update the Users sheet: {exc}'
+        logger.exception('Failed to sync account profile to its Google sheet.')
+        return False, f'Could not update the account sheet: {exc}'
 
 
 def get_users_worksheet():
@@ -3074,8 +3091,6 @@ def manage_teacher_account_in_sheet(action, account=None, original_username=''):
         if len(matches) != 1:
             return False, 'The teacher account could not be uniquely found in the Users sheet.'
         row_number, current = matches[0]
-        if normalize_username(original_username) == 'huynt':
-            return False, 'The headteacher account cannot be changed from the Teacher management page.'
 
         if action == 'delete':
             worksheet.delete_rows(row_number)
@@ -3254,6 +3269,9 @@ def login():
             session['user_id'] = user['id']
             session['user_role'] = user['role']
             session['lang'] = 'en'
+            session['headteacher_claim_user_id'] = user['id']
+            if bool((login_result or {}).get('is_headteacher')):
+                session['headteacher_user_id'] = user['id']
             return redirect(url_for('dashboard'))
 
         conn = get_db()
@@ -3282,6 +3300,7 @@ def login():
                 conn.close()
                 return render_template('login.html', error='Tài khoản của bạn đã bị khoá. Vui lòng liên hệ giáo viên.')
 
+            session.clear()
             session['user_id'] = user['id']
             session['user_role'] = user['role']
             session['lang'] = session.get('lang', 'en') or 'en'
@@ -4240,8 +4259,6 @@ def teacher_account_edit(username):
     user = require_login()
     if not is_headteacher(user):
         return redirect(url_for('dashboard') if user else url_for('login'))
-    if normalize_username(username) == 'huynt':
-        return redirect(url_for('teacher_accounts'))
     try:
         accounts = read_teacher_accounts_from_sheet()
     except Exception as exc:
@@ -4460,7 +4477,7 @@ def teacher_profile():
             conn.commit(); conn.close()
             session.clear()
             session['google_sync_warning'] = (
-                'Your profile was synced to the Users sheet. Sign in again with your updated email address.'
+                'Your profile was synced to the account sheet. Sign in again with your updated email address.'
             )
             return redirect(url_for('login'))
         session['user_id'] = user['id']

@@ -133,12 +133,15 @@ async function updateTeacherProfile(user: AuthenticatedUser, body: Record<string
   }
 
   const sheets = sheetsClient();
+  if (user.is_headteacher) await requireHeadteacherAccount(user, sheets, sheetId());
+  const sheetName = user.is_headteacher ? "HeadTeacher" : usersSheetName;
+  const accountRole = user.is_headteacher ? "headteacher" : "teacher";
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: sheetId(),
-    range: `'${usersSheetName}'!A:AZ`,
+    range: `'${sheetName}'!A:AZ`,
   });
   const values = response.data.values ?? [];
-  if (values.length < 2) throw new HttpError(404, "The teacher account was not found in the Users worksheet.");
+  if (values.length < 2) throw new HttpError(404, `The account was not found in the ${sheetName} worksheet.`);
   const headers = values[0].map(normalizeHeader);
   const columnIndex = (...names: string[]) => headers.findIndex((header) => names.includes(header));
   const nameIndex = columnIndex("fullname", "name");
@@ -148,19 +151,19 @@ async function updateTeacherProfile(user: AuthenticatedUser, body: Record<string
   const passwordHashIndex = columnIndex("passwordhash", "hashedpassword");
   const passwordIndex = columnIndex("password");
   if ([nameIndex, usernameIndex, emailIndex, roleIndex].some((index) => index < 0)) {
-    throw new HttpError(503, "The Users worksheet must contain full_name, username, email, and role columns.");
+    throw new HttpError(503, `The ${sheetName} worksheet must contain full_name, username, email, and role columns.`);
   }
   if (password && passwordHashIndex < 0 && passwordIndex < 0) {
-    throw new HttpError(503, "The Users worksheet has no password column.");
+    throw new HttpError(503, `The ${sheetName} worksheet has no password column.`);
   }
 
   const matchingRows = values.slice(1).map((row, index) => ({ row, rowNumber: index + 2 }))
     .filter(({ row }) => normalizeAccountValue(row[emailIndex]) === user.email.toLowerCase());
   if (matchingRows.length !== 1) {
-    throw new HttpError(404, "The teacher account could not be uniquely found in the Users worksheet.");
+    throw new HttpError(404, `The account could not be uniquely found in the ${sheetName} worksheet.`);
   }
   const { row, rowNumber } = matchingRows[0];
-  if (normalizeAccountValue(row[roleIndex]) !== "teacher" || user.role !== "teacher") {
+  if (normalizeAccountValue(row[roleIndex]) !== accountRole || user.role !== "teacher") {
     throw new HttpError(403, "Teacher access is required.");
   }
   const usernameKey = normalizeAccountValue(username);
@@ -180,17 +183,44 @@ async function updateTeacherProfile(user: AuthenticatedUser, body: Record<string
   if (password) updatedRow[passwordHashIndex >= 0 ? passwordHashIndex : passwordIndex] = createPasswordHash(password);
   await sheets.spreadsheets.values.update({
     spreadsheetId: sheetId(),
-    range: `'${usersSheetName}'!A${rowNumber}`,
+    range: `'${sheetName}'!A${rowNumber}`,
     valueInputOption: "RAW",
     requestBody: { majorDimension: "ROWS", values: [updatedRow] },
   });
   return { updated: true };
 }
 
+async function requireHeadteacherAccount(user: AuthenticatedUser, sheets: ReturnType<typeof sheetsClient>, spreadsheetId: string) {
+  if (user.role !== "teacher" || user.is_headteacher !== true) {
+    throw new HttpError(403, "Head Teacher access is required.");
+  }
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: "'HeadTeacher'!A:AZ",
+  });
+  const values = response.data.values ?? [];
+  if (values.length < 2) throw new HttpError(403, "Head Teacher access is required.");
+  const headers = values[0].map(normalizeHeader);
+  const emailIndex = headers.findIndex((header) => ["email", "emailaddress"].includes(header));
+  const roleIndex = headers.findIndex((header) => ["role", "accountrole"].includes(header));
+  const statusIndex = headers.findIndex((header) => ["status", "accountstatus"].includes(header));
+  if (emailIndex < 0 || roleIndex < 0 || statusIndex < 0) {
+    throw new HttpError(503, "The HeadTeacher worksheet must contain email, role, and status columns.");
+  }
+  const matches = values.slice(1).filter((row) =>
+    normalizeAccountValue(row[emailIndex]) === user.email.toLowerCase()
+    && normalizeAccountValue(row[roleIndex]) === "headteacher");
+  if (matches.length !== 1) throw new HttpError(403, "Head Teacher access is required.");
+  const status = normalizeAccountValue(statusIndex >= 0 ? matches[0][statusIndex] : "active");
+  if (!["active", "true", "1", "yes"].includes(status)) {
+    throw new HttpError(403, "Head Teacher access is required.");
+  }
+}
+
 async function manageTeacherAccount(user: AuthenticatedUser, body: Record<string, unknown>) {
-  requireTeacher(user);
   const sheets = sheetsClient();
   const spreadsheetId = sheetId();
+  await requireHeadteacherAccount(user, sheets, spreadsheetId);
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId,
     range: `'${usersSheetName}'!A:AZ`,
@@ -216,14 +246,6 @@ async function manageTeacherAccount(user: AuthenticatedUser, body: Record<string
     email: normalizeAccountValue(cells[emailIndex]),
     role: normalizeAccountValue(cells[roleIndex]),
   }));
-  const headteacherRows = rows.filter((row) =>
-    row.role === "teacher"
-    && row.username === "huynt"
-    && row.email === user.email.toLowerCase());
-  if (user.role !== "teacher" || headteacherRows.length !== 1) {
-    throw new HttpError(403, "Head Teacher access is required.");
-  }
-
   const action = typeof body.action === "string" ? body.action : "";
   const sourceAccount = body.account && typeof body.account === "object"
     ? body.account as Record<string, unknown>
@@ -284,9 +306,6 @@ async function manageTeacherAccount(user: AuthenticatedUser, body: Record<string
     throw new HttpError(404, "The teacher account could not be uniquely found.");
   }
   const target = targetRows[0];
-  if (target.username === "huynt") {
-    throw new HttpError(403, "The Head Teacher account cannot be changed from this page.");
-  }
   if (action === "delete") {
     const metadata = await sheets.spreadsheets.get({
       spreadsheetId,
