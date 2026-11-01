@@ -17,6 +17,7 @@ type UserRecord = {
 };
 
 const attempts = new Map<string, { windowStartedAt: number; count: number }>();
+const loginApiVersion = "2026-11-01.2";
 
 function rejectLogin(reason: string): never {
   console.warn(`Sign-in rejected (${reason}).`);
@@ -95,7 +96,7 @@ async function findUser(identifier: string, requestedRole: string): Promise<User
   const sheets = googleApis.sheets({ version: "v4", auth });
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: "'Student'!A:AZ",
+    range: "'Users'!A:AZ",
   });
   const values = response.data.values ?? [];
   if (values.length < 2) throw new HttpError(403, "This account is not authorized.");
@@ -112,10 +113,10 @@ async function findUser(identifier: string, requestedRole: string): Promise<User
   const activeIndex = columnIndex("isactive", "active");
   const statusIndex = columnIndex("status", "accountstatus");
   if ([emailIndex, roleIndex].some((index) => index < 0) || usernameIndex < 0) {
-    throw new HttpError(503, "The Student worksheet must contain username, email, and role columns.");
+    throw new HttpError(503, "The Users worksheet must contain username, email, and role columns.");
   }
   if (passwordHashIndex < 0 && passwordIndex < 0) {
-    throw new HttpError(503, "The Student worksheet must contain username, email, password, and role columns.");
+    throw new HttpError(503, "The Users worksheet must contain username, email, password, and role columns.");
   }
 
   const matchingRows = values.slice(1).filter((cells) => {
@@ -145,6 +146,10 @@ async function findUser(identifier: string, requestedRole: string): Promise<User
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method === "GET") {
+    res.status(200).json({ service: "login", version: loginApiVersion });
+    return;
+  }
   if (!requirePost(req, res)) return;
   try {
     const body = req.body as Record<string, unknown> | undefined;

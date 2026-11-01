@@ -28,6 +28,9 @@
         {% if error %}
         <div class="account-alert account-alert-error" role="alert">{{ error }}</div>
         {% endif %}
+        {% if saved and synced %}
+        <div class="account-alert account-alert-success" role="status">Your account details were synced to the Google Sheets Users sheet.</div>
+        {% endif %}
 
         <form method="POST" class="account-card">
             <div class="account-card-heading">
@@ -70,7 +73,7 @@
             </footer>
         </form>
 
-        <p class="account-footer-note">Your account settings are saved to this application and are not overwritten by Google Sheets synchronization.</p>
+        <p class="account-footer-note">Your account settings are synced with the Google Sheets Users sheet.</p>
     </main>
 </body>
 </html>

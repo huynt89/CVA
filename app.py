@@ -92,6 +92,7 @@ logging.basicConfig(level=logging.INFO)
 DRIVE_FOLDER_CACHE_TTL = 300
 _drive_folder_cache = {}
 PAGE_SIZE_OPTIONS = (5, 10, 20, 50, 100)
+USER_SHEET_NAME = 'Users'
 
 
 def remote_ai_enabled():
@@ -1829,8 +1830,8 @@ def _google_sheet_read_succeeded(sheet_title):
 
 
 def sync_google_students_into_db():
-    rows = _read_google_worksheet_rows('Student')
-    sheet_read_succeeded = bool(rows) or _google_sheet_read_succeeded('Student')
+    rows = _read_google_worksheet_rows(USER_SHEET_NAME)
+    sheet_read_succeeded = bool(rows) or _google_sheet_read_succeeded(USER_SHEET_NAME)
     if not sheet_read_succeeded:
         return []
 
@@ -1838,22 +1839,33 @@ def sync_google_students_into_db():
     synced = []
     seen_student_ids = set()
     existing_users = [dict(item) for item in conn.execute('SELECT * FROM users').fetchall()]
-    users_by_email = {item['email']: item for item in existing_users if item.get('email')}
-    users_by_username = {item['username']: item for item in existing_users if item.get('username')}
+    users_by_email = {
+        str(item['email']).strip().lower(): item
+        for item in existing_users if item.get('email')
+    }
+    users_by_username = {
+        str(item['username']).strip().lower(): item
+        for item in existing_users if item.get('username')
+    }
     for row in rows:
         full_name = str(row.get('full_name') or row.get('Full Name') or '').strip()
         email = str(row.get('email') or row.get('Email') or '').strip().lower()
         username = str(row.get('username') or row.get('Username') or '').strip()
         class_name = str(row.get('class_name') or row.get('Class Name') or row.get('Class') or '').strip()
-        role = 'student'
+        role = str(row.get('role') or row.get('Role') or '').strip().lower()
+        if role not in {'student', 'teacher'}:
+            continue
         is_active = str(row.get('status') or row.get('is_active') or 'active').strip().lower()
         if not full_name and not email and not username:
             continue
 
-        existing = users_by_email.get(email) if email else users_by_username.get(username)
+        existing = (
+            (users_by_email.get(email) if email else None)
+            or users_by_username.get(username.lower())
+        )
 
         if existing:
-            if existing.get('role') == 'teacher':
+            if existing.get('role') == 'teacher' and role == 'student':
                 continue
             conn.execute(
                 'UPDATE users SET full_name = ?, username = ?, email = ?, class_name = ?, role = ?, is_active = ? WHERE id = ?',
@@ -1875,15 +1887,16 @@ def sync_google_students_into_db():
             student_row['role'] = role
             student_row['is_active'] = 1 if is_active not in {'locked', 'inactive', '0', 'false', 'no'} else 0
             if existing.get('email'):
-                users_by_email.pop(existing['email'], None)
+                users_by_email.pop(str(existing['email']).strip().lower(), None)
             if existing.get('username'):
-                users_by_username.pop(existing['username'], None)
+                users_by_username.pop(str(existing['username']).strip().lower(), None)
             if student_row.get('email'):
-                users_by_email[student_row['email']] = student_row
+                users_by_email[str(student_row['email']).strip().lower()] = student_row
             if student_row.get('username'):
-                users_by_username[student_row['username']] = student_row
+                users_by_username[str(student_row['username']).strip().lower()] = student_row
             synced.append(student_row)
-            seen_student_ids.add(existing['id'])
+            if role == 'student':
+                seen_student_ids.add(existing['id'])
             continue
 
         final_username = normalize_username(username) or generate_username(full_name, email)
@@ -1904,7 +1917,8 @@ def sync_google_students_into_db():
             'total_points': 0,
             'average_score': 0,
         })
-        seen_student_ids.add(student_id)
+        if role == 'student':
+            seen_student_ids.add(student_id)
         if synced[-1].get('email'):
             users_by_email[synced[-1]['email'].lower()] = synced[-1]
         if synced[-1].get('username'):
@@ -1919,7 +1933,7 @@ def sync_google_students_into_db():
     else:
         absent_students = conn.execute(
             "SELECT id FROM users WHERE role = 'student'"
-        ).fetchall() if _google_sheet_read_succeeded('Student') else []
+        ).fetchall() if _google_sheet_read_succeeded(USER_SHEET_NAME) else []
     for student_row in absent_students:
         conn.execute('DELETE FROM submissions WHERE student_id = ?', (student_row['id'],))
         conn.execute('DELETE FROM users WHERE id = ? AND role = ?', (student_row['id'], 'student'))
@@ -2667,7 +2681,7 @@ def sync_students_to_sheet(rows=None):
         ])
 
         if IS_FROZEN:
-            current_sheet = call_google_function('read_sheet', {'sheet': 'Student'})
+            current_sheet = call_google_function('read_sheet', {'sheet': USER_SHEET_NAME})
             if not current_sheet:
                 return False
             current_headers = current_sheet.get('headers') or []
@@ -2679,7 +2693,7 @@ def sync_students_to_sheet(rows=None):
             sheet_values = merge_student_sheet_values(sheet_values, existing_values)
             return bool(call_google_function(
                 'replace_sheet',
-                {'sheet': 'Student', 'values': sheet_values},
+                {'sheet': USER_SHEET_NAME, 'values': sheet_values},
             ))
 
         credentials = get_google_credentials()
@@ -2699,7 +2713,7 @@ def sync_students_to_sheet(rows=None):
             except gspread.SpreadsheetNotFound:
                 sheet = client.create(sheet_name)
                 logger.info('Created missing Google Sheet: %s', sheet_name)
-        worksheet = _get_or_create_worksheet(sheet, 'Student', rows=2000, cols=20)
+        worksheet = _get_or_create_worksheet(sheet, USER_SHEET_NAME, rows=2000, cols=20)
         existing_values = worksheet.get_all_values() if hasattr(worksheet, 'get_all_values') else []
         sheet_values = merge_student_sheet_values(sheet_values, existing_values)
         _replace_worksheet_values(worksheet, sheet_values)
@@ -2711,6 +2725,101 @@ def sync_students_to_sheet(rows=None):
         logger.exception(message)
         set_session_message('google_sync_warning', message)
         return False
+
+
+def sync_teacher_profile_to_sheet(user, profile, password=''):
+    if vercel_auth_enabled():
+        result = call_google_function(
+            'update_user_profile',
+            {
+                'full_name': profile['full_name'],
+                'username': profile['username'],
+                'email': profile['email'],
+                'password': password,
+            },
+        )
+        if result:
+            return True, ''
+        return False, 'The Users sheet could not be updated. Your account changes were not saved.'
+
+    credentials = get_google_credentials()
+    if not credentials:
+        return False, 'Google Sheets credentials are missing or invalid.'
+
+    try:
+        client = gspread.authorize(credentials)
+        sheet_id = os.getenv('GOOGLE_SHEET_ID', '').strip()
+        sheet_name = os.getenv('GOOGLE_SHEET_NAME', 'EngClassAI')
+        if sheet_id:
+            spreadsheet = client.open_by_key(sheet_id)
+        else:
+            spreadsheet = client.open(sheet_name)
+        worksheet = spreadsheet.worksheet(USER_SHEET_NAME)
+        values = worksheet.get_all_values()
+        if len(values) < 2:
+            return False, 'The Users sheet has no account rows to update.'
+
+        headers = [str(header).strip() for header in values[0]]
+        normalized_headers = {
+            re.sub(r'[^a-z0-9]', '', header.lower()): index
+            for index, header in enumerate(headers)
+        }
+
+        def column(*names):
+            return next(
+                (normalized_headers[name] for name in names if name in normalized_headers),
+                None,
+            )
+
+        email_index = column('email', 'emailaddress')
+        username_index = column('username', 'userid')
+        name_index = column('fullname', 'name')
+        role_index = column('role', 'accountrole')
+        password_index = column('passwordhash', 'hashedpassword', 'password')
+        if None in (email_index, username_index, name_index, role_index):
+            return False, 'The Users sheet needs full_name, username, email, and role columns.'
+
+        old_email = str(user.get('email') or '').strip().lower()
+        old_username = str(user.get('username') or '').strip().lower()
+        matches = []
+        for row_number, row in enumerate(values[1:], start=2):
+            row_email = str(row[email_index] if email_index < len(row) else '').strip().lower()
+            row_username = str(row[username_index] if username_index < len(row) else '').strip().lower()
+            if (old_email and row_email == old_email) or (old_username and row_username == old_username):
+                matches.append((row_number, row))
+        if len(matches) != 1:
+            return False, 'The teacher account could not be uniquely found in the Users sheet.'
+
+        matched_row_number, matched_row = matches[0]
+        for row_number, row in enumerate(values[1:], start=2):
+            if row_number == matched_row_number:
+                continue
+            row_email = str(row[email_index] if email_index < len(row) else '').strip().lower()
+            row_username = str(row[username_index] if username_index < len(row) else '').strip().lower()
+            if row_email == profile['email'].lower() or row_username == profile['username'].lower():
+                return False, 'That username or email address is already in use in the Users sheet.'
+        if str(matched_row[role_index] if role_index < len(matched_row) else '').strip().lower() != 'teacher':
+            return False, 'The matching Users sheet row is not a teacher account.'
+        if password and password_index is None:
+            return False, 'The Users sheet has no password column to update.'
+
+        updated_row = list(matched_row)
+        if len(updated_row) < len(headers):
+            updated_row.extend([''] * (len(headers) - len(updated_row)))
+        updated_row[name_index] = profile['full_name']
+        updated_row[username_index] = profile['username']
+        updated_row[email_index] = profile['email']
+        if password:
+            updated_row[password_index] = hash_password_for_sheet(password)
+        worksheet.update(
+            values=[updated_row],
+            range_name=f'A{matched_row_number}',
+            value_input_option='RAW',
+        )
+        return True, ''
+    except Exception as exc:
+        logger.exception('Failed to sync teacher profile to the Users sheet.')
+        return False, f'Could not update the Users sheet: {exc}'
 
 
 def sync_lessons_to_sheet(rows=None):
@@ -3546,7 +3655,7 @@ def teacher_edit_student(user_id):
                 (full_name, username, email, class_name, is_active, user_id)
             )
         conn.commit(); conn.close()
-        set_google_sync_feedback('Student', 'Student updated', sync_students_to_sheet())
+        set_google_sync_feedback(USER_SHEET_NAME, 'Student updated', sync_students_to_sheet())
         return redirect(url_for('teacher_students'))
 
     conn.close()
@@ -3598,7 +3707,7 @@ def teacher_create_student():
             (full_name, final_username, email, password, role, class_name, 1, 0, 0)
         )
         conn.commit(); conn.close()
-        set_google_sync_feedback('Student', 'Student created', sync_students_to_sheet())
+        set_google_sync_feedback(USER_SHEET_NAME, 'Student created', sync_students_to_sheet())
         session['student_created_success'] = 'Student account created successfully.'
         return redirect(url_for('teacher_students'))
 
@@ -3684,7 +3793,7 @@ def teacher_sync_google():
     try:
         if sheet == 'student':
             synced = sync_google_students_into_db()
-            message = f'Student sheet synced successfully ({len(synced)} records).' if synced else 'Student sync failed or the Student sheet contains no records.'
+            message = f'Users sheet synced successfully ({len(synced)} accounts).' if synced else 'Users sync failed or the Users sheet contains no accounts.'
         elif sheet == 'lesson':
             synced = sync_google_lessons_into_db()
             message = f'Lesson sheet synced successfully ({len(synced)} records).' if synced else 'Lesson sync failed or the Lesson sheet contains no records.'
@@ -3698,10 +3807,10 @@ def teacher_sync_google():
             practices = sync_google_practice_into_db()
             if students or lessons or practices:
                 sync_practice_to_sheet()
-                message = f'Google Sheets sync completed: {len(students)} students, {len(lessons)} lessons, and {len(practices)} practice records imported.'
+                message = f'Google Sheets sync completed: {len(students)} user accounts, {len(lessons)} lessons, and {len(practices)} practice records imported.'
                 sync_success = True
             else:
-                message = 'Google Sheets sync failed or the Student, Lesson, and Practice sheets contain no records.'
+                message = 'Google Sheets sync failed or the Users, Lesson, and Practice sheets contain no records.'
                 sync_success = False
         else:
             message = f'Google Sheets sync failed: unsupported sheet "{sheet}".'
@@ -3838,7 +3947,7 @@ def import_students():
         conn.commit(); conn.close()
 
     if inserted:
-        set_google_sync_feedback('Student', f'{len(inserted)} students imported', sync_students_to_sheet())
+        set_google_sync_feedback(USER_SHEET_NAME, f'{len(inserted)} students imported', sync_students_to_sheet())
     return redirect(url_for('teacher_students'))
 
 
@@ -3847,6 +3956,7 @@ def teacher_profile():
     user = require_login()
     if not user or user['role'] != 'teacher':
         return redirect(url_for('login'))
+    user_data = dict(user)
 
     if request.method == 'POST':
         full_name = request.form.get('full_name', '').strip()
@@ -3857,22 +3967,44 @@ def teacher_profile():
         if not full_name or not username or not email:
             return render_template(
                 'teacher_profile_edit.html',
-                user={**dict(user), 'full_name': full_name, 'username': request.form.get('username', ''), 'email': email},
+                user={**user_data, 'full_name': full_name, 'username': request.form.get('username', ''), 'email': email},
                 error='Name, username, and email are required.',
                 saved=False,
+                synced=False,
             )
 
         conn = get_db()
-        existing = conn.execute('SELECT id FROM users WHERE (username = ? OR email = ?) AND id != ?', (username, email, user['id'])).fetchone()
+        existing = conn.execute(
+            'SELECT id FROM users WHERE (lower(username) = ? OR lower(email) = ?) AND id != ?',
+            (username.lower(), email.lower(), user['id']),
+        ).fetchone()
         if existing:
             conn.close()
             return render_template(
                 'teacher_profile_edit.html',
-                user={**dict(user), 'full_name': full_name, 'username': request.form.get('username', ''), 'email': email},
+                user={**user_data, 'full_name': full_name, 'username': request.form.get('username', ''), 'email': email},
                 error='That username or email address is already in use.',
                 saved=False,
+                synced=False,
             )
+        conn.close()
 
+        updated_profile = {
+            'full_name': full_name,
+            'username': username,
+            'email': email,
+        }
+        synced, sync_error = sync_teacher_profile_to_sheet(user_data, updated_profile, password)
+        if not synced:
+            return render_template(
+                'teacher_profile_edit.html',
+                user={**user_data, **updated_profile},
+                error=sync_error,
+                saved=False,
+                synced=False,
+            ), 502
+
+        conn = get_db()
         if password:
             conn.execute(
                 'UPDATE users SET full_name = ?, username = ?, email = ?, password = ? WHERE id = ?',
@@ -3884,14 +4016,25 @@ def teacher_profile():
                 (full_name, username, email, user['id'])
             )
         conn.commit(); conn.close()
+        email_changed = email.lower() != str(user_data.get('email') or '').strip().lower()
+        if email_changed and vercel_auth_enabled():
+            conn = get_db()
+            conn.execute('DELETE FROM cloud_tokens WHERE user_id = ?', (user['id'],))
+            conn.commit(); conn.close()
+            session.clear()
+            session['google_sync_warning'] = (
+                'Your profile was synced to the Users sheet. Sign in again with your updated email address.'
+            )
+            return redirect(url_for('login'))
         session['user_id'] = user['id']
-        return redirect(url_for('teacher_profile', saved='1'))
+        return redirect(url_for('teacher_profile', saved='1', synced='1'))
 
     return render_template(
         'teacher_profile_edit.html',
-        user=dict(user),
+        user=user_data,
         error=None,
         saved=request.args.get('saved') == '1',
+        synced=request.args.get('synced') == '1',
     )
 
 
@@ -3944,7 +4087,7 @@ def toggle_student_status(user_id):
     else:
         action = 'Student status updated'
     conn.close()
-    set_google_sync_feedback('Student', action, sync_students_to_sheet())
+    set_google_sync_feedback(USER_SHEET_NAME, action, sync_students_to_sheet())
     return redirect(url_for('teacher_students'))
 
 
@@ -3959,7 +4102,7 @@ def delete_student(user_id):
     conn.execute('DELETE FROM users WHERE id = ?', (user_id,))
     conn.commit()
     conn.close()
-    set_google_sync_feedback('Student', 'Student deleted', sync_students_to_sheet())
+    set_google_sync_feedback(USER_SHEET_NAME, 'Student deleted', sync_students_to_sheet())
     return redirect(url_for('teacher_students'))
 
 

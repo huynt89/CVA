@@ -1,3 +1,4 @@
+import { randomBytes, scryptSync } from "node:crypto";
 import { google as googleApis } from "googleapis";
 import type { VercelRequest, VercelResponse } from "../lib/vercel-types";
 import {
@@ -11,7 +12,8 @@ import {
 } from "../lib/vercel-api";
 import { googleServiceAccountCredentials } from "../lib/google-credentials";
 
-const allowedSheets = new Set(["Student", "Lesson", "Practice"]);
+const allowedSheets = new Set(["Users", "Lesson", "Practice"]);
+const usersSheetName = "Users";
 const practiceHeaders = [
   "submitted_at", "student_id", "student_email", "student_name", "username", "class_name",
   "lesson_id", "lesson_title", "task_1_score", "task_2_score", "task_3_score", "task_4_score",
@@ -96,6 +98,95 @@ async function replaceSheetRows(name: string, value: unknown) {
   return values.length - 1;
 }
 
+function normalizeHeader(value: unknown) {
+  return String(value ?? "").normalize("NFKC").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function normalizeAccountValue(value: unknown) {
+  return String(value ?? "").normalize("NFKC").trim().toLowerCase();
+}
+
+function createPasswordHash(password: string) {
+  const salt = randomBytes(16);
+  const digest = scryptSync(password, salt, 64, {
+    N: 16_384,
+    r: 8,
+    p: 1,
+    maxmem: 64 * 1024 * 1024,
+  });
+  return `scrypt$${salt.toString("base64")}$${digest.toString("base64")}`;
+}
+
+async function updateTeacherProfile(user: AuthenticatedUser, body: Record<string, unknown>) {
+  requireTeacher(user);
+  const fullName = typeof body.full_name === "string" ? body.full_name.trim() : "";
+  const username = typeof body.username === "string" ? body.username.trim() : "";
+  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+  const password = typeof body.password === "string" ? body.password : "";
+  if (
+    !fullName || fullName.length > 200
+    || !/^[\p{L}\p{N}._-]{1,120}$/u.test(username)
+    || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+    || password.length > 256
+  ) {
+    throw new HttpError(400, "Enter a valid name, username, email, and password.");
+  }
+
+  const sheets = sheetsClient();
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: sheetId(),
+    range: `'${usersSheetName}'!A:AZ`,
+  });
+  const values = response.data.values ?? [];
+  if (values.length < 2) throw new HttpError(404, "The teacher account was not found in the Users worksheet.");
+  const headers = values[0].map(normalizeHeader);
+  const columnIndex = (...names: string[]) => headers.findIndex((header) => names.includes(header));
+  const nameIndex = columnIndex("fullname", "name");
+  const usernameIndex = columnIndex("username", "userid");
+  const emailIndex = columnIndex("email", "emailaddress");
+  const roleIndex = columnIndex("role", "accountrole");
+  const passwordHashIndex = columnIndex("passwordhash", "hashedpassword");
+  const passwordIndex = columnIndex("password");
+  if ([nameIndex, usernameIndex, emailIndex, roleIndex].some((index) => index < 0)) {
+    throw new HttpError(503, "The Users worksheet must contain full_name, username, email, and role columns.");
+  }
+  if (password && passwordHashIndex < 0 && passwordIndex < 0) {
+    throw new HttpError(503, "The Users worksheet has no password column.");
+  }
+
+  const matchingRows = values.slice(1).map((row, index) => ({ row, rowNumber: index + 2 }))
+    .filter(({ row }) => normalizeAccountValue(row[emailIndex]) === user.email.toLowerCase());
+  if (matchingRows.length !== 1) {
+    throw new HttpError(404, "The teacher account could not be uniquely found in the Users worksheet.");
+  }
+  const { row, rowNumber } = matchingRows[0];
+  if (normalizeAccountValue(row[roleIndex]) !== "teacher" || user.role !== "teacher") {
+    throw new HttpError(403, "Teacher access is required.");
+  }
+  const usernameKey = normalizeAccountValue(username);
+  const emailKey = normalizeAccountValue(email);
+  const duplicate = values.slice(1).some((candidate, index) => index + 2 !== rowNumber
+    && (
+      normalizeAccountValue(candidate[usernameIndex]) === usernameKey
+      || normalizeAccountValue(candidate[emailIndex]) === emailKey
+    ));
+  if (duplicate) throw new HttpError(409, "That username or email address is already in use.");
+
+  const updatedRow = [...row];
+  while (updatedRow.length < headers.length) updatedRow.push("");
+  updatedRow[nameIndex] = fullName;
+  updatedRow[usernameIndex] = username;
+  updatedRow[emailIndex] = email;
+  if (password) updatedRow[passwordHashIndex >= 0 ? passwordHashIndex : passwordIndex] = createPasswordHash(password);
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: sheetId(),
+    range: `'${usersSheetName}'!A${rowNumber}`,
+    valueInputOption: "RAW",
+    requestBody: { majorDimension: "ROWS", values: [updatedRow] },
+  });
+  return { updated: true };
+}
+
 async function upsertStudentPractice(user: AuthenticatedUser, body: Record<string, unknown>) {
   if (user.role !== "student") throw new HttpError(403, "Student access is required.");
   const headers = Array.isArray(body.headers) ? body.headers.map(String) : [];
@@ -103,9 +194,9 @@ async function upsertStudentPractice(user: AuthenticatedUser, body: Record<strin
     throw new HttpError(400, "The Practice headers are invalid.");
   }
   const incomingRows = sanitizeRows(body.rows, 1000);
-  const studentData = await readSheetRows("Student");
+  const studentData = await readSheetRows(usersSheetName);
   const student = studentData.rows.find((row) => String(row.email ?? "").trim().toLowerCase() === user.email.toLowerCase());
-  if (!student) throw new HttpError(403, "This account is not listed on the Student worksheet.");
+  if (!student) throw new HttpError(403, "This account is not listed on the Users worksheet.");
 
   const practice = await readSheetRows("Practice");
   const outputHeaders = practice.headers.length ? [...practice.headers] : [...headers];
@@ -159,6 +250,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       requireTeacher(user);
       const rowsWritten = await replaceSheetRows(validateSheet(body?.sheet), body?.values);
       res.status(200).json({ ok: true, rows_written: rowsWritten });
+      return;
+    }
+    if (operation === "update_user_profile") {
+      const result = await updateTeacherProfile(user, body ?? {});
+      res.status(200).json({ ok: true, ...result });
       return;
     }
     if (operation === "upsert_practice") {
